@@ -6,12 +6,12 @@ the actual test scripts
 PRINT_DETAILS = """
 The mask @1 matches 1 atoms:
 
-   ATOM    RES  RESNAME  NAME  TYPE   LJ Radius    LJ Depth      Mass    Charge GB Radius GB Screen
-      1      1      SER     N    N3      1.8240      0.1700   14.0100    0.1849    1.5500    0.7900
+   ATOM    RES  RESNAME  NAME  TYPE   At.#   LJ Radius    LJ Depth      Mass    Charge GB Radius GB Screen
+      1      1      SER     N    N3      7      1.8240      0.1700   14.0100    0.1849    1.5500    0.7900
 """
 
 PRINT_BONDS = """\
-Atom 1               Atom 2               R eq       Frc Cnst  
+             Atom 1              Atom 2       R eq   Frc Cnst
       1    N (  N3)       5   CA (  CT)     1.4710   367.0000
       1    N (  N3)       2   H1 (   H)     1.0100   434.0000
       1    N (  N3)       3   H2 (   H)     1.0100   434.0000
@@ -19,7 +19,7 @@ Atom 1               Atom 2               R eq       Frc Cnst
 """
 
 PRINT_ANGLES = """\
-Atom 1               Atom 2               Atom 3               Frc Cnst   Theta eq  
+             Atom 1               Atom 2               Atom 3   Frc Cnst   Theta eq
       1    N (  N3)        5   CA (  CT)        7   CB (  CT)    80.0000   111.2000
       1    N (  N3)        5   CA (  CT)       12    C (   C)    80.0000   111.2000
       4   H3 (   H)        1    N (  N3)        5   CA (  CT)    50.0000   109.5000
@@ -32,7 +32,7 @@ Atom 1               Atom 2               Atom 3               Frc Cnst   Theta 
 """
 
 PRINT_DIHEDRALS = """\
-Atom 1               Atom 2               Atom 3               Atom 4                Height     Periodic.  Phase      EEL Scale  VDW Scale 
+               Atom 1               Atom 2               Atom 3               Atom 4     Height  Periodic.      Phase  EEL Scale  VDW Scale
         1    N (  N3)        5   CA (  CT)        7   CB (  CT)       10   OG (  OH)     0.1556     3.0000     0.0000     1.2000     2.0000
         1    N (  N3)        5   CA (  CT)       12    C (   C)       13    O (   O)     0.0000     2.0000     0.0000     1.2000     2.0000
         1    N (  N3)        5   CA (  CT)       12    C (   C)       14    N (   N)     0.0000     2.0000     0.0000     1.2000     2.0000
@@ -50,7 +50,7 @@ Atom 1               Atom 2               Atom 3               Atom 4           
 """
 
 SET_BOND = """\
-Atom 1               Atom 2               R eq       Frc Cnst  
+             Atom 1              Atom 2       R eq   Frc Cnst
     288   CA (  CT)     290   CB (  CT)     1.5000   300.0000
     288   CA (  CT)     294    C (   C)     1.5220   317.0000
     286    N (   N)     288   CA (  CT)     1.4490   337.0000
@@ -102,7 +102,7 @@ Atom 1               Atom 2               R eq       Frc Cnst
 """
 
 SET_ANGLE = """\
-Atom 1               Atom 2               Atom 3               Frc Cnst   Theta eq  
+             Atom 1               Atom 2               Atom 3   Frc Cnst   Theta eq
     290   CB (  CT)      288   CA (  CT)      294    C (   C)    63.0000   111.1000
     286    N (   N)      288   CA (  CT)      290   CB (  CT)    80.0000   109.7000
     319   CB (  CT)      317   CA (  CT)      323    C (   C)    63.0000   111.1000
@@ -250,12 +250,12 @@ System density (g/mL): 0.854596
 PRINT_DETAILSC = """
 The mask @1 matches 1 atoms:
 
-   ATOM    RES  RESNAME  NAME  TYPE   LJ Radius    LJ Depth      Mass    Charge GB Radius GB Screen
-      1      1      ALA     N   NH3      1.8500      0.2000   14.0070   -0.3000    1.5500    0.7900
+   ATOM    RES  RESNAME  NAME  TYPE   At.#   LJ Radius    LJ Depth      Mass    Charge GB Radius GB Screen
+      1      1      ALA     N   NH3      7      1.8500      0.2000   14.0070   -0.3000    1.5500    0.7900
 """
 
 PRINT_BONDSC = """\
-Atom 1               Atom 2               R eq       Frc Cnst  
+             Atom 1              Atom 2       R eq   Frc Cnst
       1    N ( NH3)       5   CA ( CT1)     1.4800   200.0000
       2  HT1 (  HC)       1    N ( NH3)     1.0400   403.0000
       3  HT2 (  HC)       1    N ( NH3)     1.0400   403.0000
@@ -263,7 +263,7 @@ Atom 1               Atom 2               R eq       Frc Cnst
 """
 
 PRINT_ANGLESC = """\
-Atom 1               Atom 2               Atom 3               Frc Cnst   Theta eq  
+             Atom 1               Atom 2               Atom 3   Frc Cnst   Theta eq
       1    N ( NH3)        5   CA ( CT1)        7   CB ( CT3)    67.7000   110.0000
       1    N ( NH3)        5   CA ( CT1)       11    C (   C)    43.7000   110.0000
       2  HT1 (  HC)        1    N ( NH3)        3  HT2 (  HC)    44.0000   109.5000
@@ -276,7 +276,7 @@ Atom 1               Atom 2               Atom 3               Frc Cnst   Theta 
 """
 
 PRINT_DIHEDRALSC = """\
-Atom 1               Atom 2               Atom 3               Atom 4                Height     Periodic.  Phase      EEL Scale  VDW Scale 
+               Atom 1               Atom 2               Atom 3               Atom 4     Height  Periodic.      Phase  EEL Scale  VDW Scale
         1    N ( NH3)        5   CA ( CT1)       11    C (   C)       12    O (   O)     0.0000     1.0000     0.0000     1.0000     1.0000
         1    N ( NH3)        5   CA ( CT1)       11    C (   C)       13    N ( NH1)     0.6000     1.0000     0.0000     1.0000     1.0000
         1    N ( NH3)        5   CA ( CT1)        7   CB ( CT3)        8  HB1 (  HA)     0.2000     3.0000     0.0000     1.0000     1.0000
@@ -294,7 +294,7 @@ Atom 1               Atom 2               Atom 3               Atom 4           
 """
 
 SET_BONDC = """\
-Atom 1               Atom 2               R eq       Frc Cnst  
+             Atom 1              Atom 2       R eq   Frc Cnst
       7   CB ( CT3)       5   CA ( CT1)     1.5000   300.0000
       1    N ( NH3)       5   CA ( CT1)     1.4800   200.0000
      11    C (   C)       5   CA ( CT1)     1.4900   250.0000
@@ -310,7 +310,7 @@ Atom 1               Atom 2               R eq       Frc Cnst
 """
 
 SET_ANGLEC = """\
-Atom 1               Atom 2               Atom 3               Frc Cnst   Theta eq  
+             Atom 1               Atom 2               Atom 3   Frc Cnst   Theta eq
       1    N ( NH3)        5   CA ( CT1)        7   CB ( CT3)    67.7000   110.0000
       7   CB ( CT3)        5   CA ( CT1)       11    C (   C)    52.0000   108.0000
      13    N ( NH1)       15   CA ( CT1)       17   CB ( CT3)    70.0000   113.5000
@@ -373,23 +373,23 @@ System density (g/mL): 0.916989
 PRINT_DETAILSA = """
 The mask :1-2 matches 12 atoms:
 
-   ATOM    RES  RESNAME  NAME  TYPE      Mass
-      1      1      ACE   CH3     C   12.0110
-      2      1      ACE     C     C   12.0110
-      3      1      ACE     O     O   15.9990
-      4      1      ACE  H31H     H    1.0080
-      5      1      ACE  H32H     H    1.0080
-      6      1      ACE  H33H     H    1.0080
-      7      2      NME     N     N   14.0070
-      8      2      NME   CH3     C   12.0110
-      9      2      NME     H    HN    1.0080
-     10      2      NME  H31H     H    1.0080
-     11      2      NME  H32H     H    1.0080
-     12      2      NME  H33H     H    1.0080
+   ATOM    RES  RESNAME  NAME  TYPE   At.#      Mass
+      1      1      ACE   CH3     C      6   12.0110
+      2      1      ACE     C     C      6   12.0110
+      3      1      ACE     O     O      8   15.9990
+      4      1      ACE  H31H     H      1    1.0080
+      5      1      ACE  H32H     H      1    1.0080
+      6      1      ACE  H33H     H      1    1.0080
+      7      2      NME     N     N      7   14.0070
+      8      2      NME   CH3     C      6   12.0110
+      9      2      NME     H    HN      1    1.0080
+     10      2      NME  H31H     H      1    1.0080
+     11      2      NME  H32H     H      1    1.0080
+     12      2      NME  H33H     H      1    1.0080
 """
 
 PRINT_BONDSA = """\
-Atom 1               Atom 2               R eq       Frc Cnst  
+             Atom 1              Atom 2       R eq   Frc Cnst
       1  CH3 (   C)       2    C (   C)     1.5090   345.0000
       1  CH3 (   C)       4 H31H (   H)     1.1120   341.0000
       1  CH3 (   C)       5 H32H (   H)     1.1120   341.0000
@@ -397,17 +397,17 @@ Atom 1               Atom 2               R eq       Frc Cnst
 """
 
 PRINT_ANGLESA = """\
-Atom 1               Atom 2               Atom 3               Frc Cnst   Theta eq  
-      2    C (   C)        1  CH3 (   C)        4 H31H (   H)    39.0000  6273.8879
-      2    C (   C)        1  CH3 (   C)        5 H32H (   H)    39.0000  6273.8879
-      2    C (   C)        1  CH3 (   C)        6 H33H (   H)    39.0000  6273.8879
-      4 H31H (   H)        1  CH3 (   C)        5 H32H (   H)    40.0000  6176.4850
-      4 H31H (   H)        1  CH3 (   C)        6 H33H (   H)    40.0000  6176.4850
-      5 H32H (   H)        1  CH3 (   C)        6 H33H (   H)    40.0000  6176.4850
+             Atom 1               Atom 2               Atom 3   Frc Cnst   Theta eq
+      2    C (   C)        1  CH3 (   C)        4 H31H (   H)    39.0000   109.5000
+      2    C (   C)        1  CH3 (   C)        5 H32H (   H)    39.0000   109.5000
+      2    C (   C)        1  CH3 (   C)        6 H33H (   H)    39.0000   109.5000
+      4 H31H (   H)        1  CH3 (   C)        5 H32H (   H)    40.0000   107.8000
+      4 H31H (   H)        1  CH3 (   C)        6 H33H (   H)    40.0000   107.8000
+      5 H32H (   H)        1  CH3 (   C)        6 H33H (   H)    40.0000   107.8000
 """
 
 PRINT_DIHEDRALSA = """\
-Atom 1               Atom 2               Atom 3               Atom 4                Height     Periodic.  Phase      EEL Scale  VDW Scale 
+               Atom 1               Atom 2               Atom 3               Atom 4     Height  Periodic.      Phase  EEL Scale  VDW Scale
         4 H31H (   H)        1  CH3 (   C)        2    C (   C)        3    O (   O)     0.2350     3.0000     0.0000        N/A        N/A
         4 H31H (   H)        1  CH3 (   C)        2    C (   C)        7    N (   N)    -0.0100     3.0000     0.0000        N/A        N/A
         5 H32H (   H)        1  CH3 (   C)        2    C (   C)        3    O (   O)     0.2350     3.0000     0.0000        N/A        N/A
@@ -452,19 +452,19 @@ System density (g/mL): 0.909751
 """
 
 PRINT_BONDS_2MASKS = """\
-Atom 1               Atom 2               R eq       Frc Cnst  
+             Atom 1              Atom 2       R eq   Frc Cnst
       1    N (  N3)       3   H2 (   H)     1.0100   434.0000
 """
 
 PRINT_ANGLES_2MASKS_1 = """\
-Atom 1               Atom 2               Atom 3               Frc Cnst   Theta eq  
+             Atom 1               Atom 2               Atom 3   Frc Cnst   Theta eq
       1    N (  N3)        5   CA (  CT)        7   CB (  CT)    80.0000   111.2000
       1    N (  N3)        5   CA (  CT)       12    C (   C)    80.0000   111.2000
       1    N (  N3)        5   CA (  CT)        6   HA (  HP)    50.0000   109.5000
 """
 
 PRINT_ANGLES_2MASKS_2 = """\
-Atom 1               Atom 2               Atom 3               Frc Cnst   Theta eq  
+             Atom 1               Atom 2               Atom 3   Frc Cnst   Theta eq
       4   H3 (   H)        1    N (  N3)        5   CA (  CT)    50.0000   109.5000
       3   H2 (   H)        1    N (  N3)        4   H3 (   H)    35.0000   109.5000
       3   H2 (   H)        1    N (  N3)        5   CA (  CT)    50.0000   109.5000
@@ -474,19 +474,19 @@ Atom 1               Atom 2               Atom 3               Frc Cnst   Theta 
 """
 
 PRINT_ANGLES_2MASKS_3 = """\
-Atom 1               Atom 2               Atom 3               Frc Cnst   Theta eq  
+             Atom 1               Atom 2               Atom 3   Frc Cnst   Theta eq
       1    N (  N3)        5   CA (  CT)        7   CB (  CT)    80.0000   111.2000
       1    N (  N3)        5   CA (  CT)       12    C (   C)    80.0000   111.2000
       1    N (  N3)        5   CA (  CT)        6   HA (  HP)    50.0000   109.5000
 """
 
 PRINT_ANGLES_3MASKS = """\
-Atom 1               Atom 2               Atom 3               Frc Cnst   Theta eq  
+             Atom 1               Atom 2               Atom 3   Frc Cnst   Theta eq
       1    N (  N3)        5   CA (  CT)        7   CB (  CT)    80.0000   111.2000
 """
 
 PRINT_DIHEDRALS_2MASKS = """\
-Atom 1               Atom 2               Atom 3               Atom 4                Height     Periodic.  Phase      EEL Scale  VDW Scale 
+               Atom 1               Atom 2               Atom 3               Atom 4     Height  Periodic.      Phase  EEL Scale  VDW Scale
         1    N (  N3)        5   CA (  CT)        7   CB (  CT)       10   OG (  OH)     0.1556     3.0000     0.0000     1.2000     2.0000
         1    N (  N3)        5   CA (  CT)       12    C (   C)       13    O (   O)     0.0000     2.0000     0.0000     1.2000     2.0000
         1    N (  N3)        5   CA (  CT)       12    C (   C)       14    N (   N)     0.0000     2.0000     0.0000     1.2000     2.0000
@@ -495,14 +495,14 @@ Atom 1               Atom 2               Atom 3               Atom 4           
 """
 
 PRINT_DIHEDRALS_3MASKS = """\
-Atom 1               Atom 2               Atom 3               Atom 4                Height     Periodic.  Phase      EEL Scale  VDW Scale 
+               Atom 1               Atom 2               Atom 3               Atom 4     Height  Periodic.      Phase  EEL Scale  VDW Scale
         4   H3 (   H)        1    N (  N3)        5   CA (  CT)        6   HA (  HP)     0.1556     3.0000     0.0000     1.2000     2.0000
         4   H3 (   H)        1    N (  N3)        5   CA (  CT)        7   CB (  CT)     0.1556     3.0000     0.0000     1.2000     2.0000
         4   H3 (   H)        1    N (  N3)        5   CA (  CT)       12    C (   C)     0.1556     3.0000     0.0000     1.2000     2.0000
 """
 
 PRINT_DIHEDRALS_4MASKS = """\
-Atom 1               Atom 2               Atom 3               Atom 4                Height     Periodic.  Phase      EEL Scale  VDW Scale 
+               Atom 1               Atom 2               Atom 3               Atom 4     Height  Periodic.      Phase  EEL Scale  VDW Scale
         7   CB (  CT)        5   CA (  CT)       12    C (   C)       14    N (   N)     0.0700     2.0000     0.0000     1.2000     2.0000
 M       7   CB (  CT)        5   CA (  CT)       12    C (   C)       14    N (   N)     0.1000     4.0000     0.0000     1.2000     2.0000
 """

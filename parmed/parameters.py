@@ -7,9 +7,9 @@ Author: Jason M. Swails
 """
 from __future__ import print_function, division
 
-from parmed.exceptions import ParameterError
+from parmed.exceptions import ParameterError, ParameterWarning
 from parmed.topologyobjects import (NoUreyBradley, DihedralTypeList,
-                AtomType, DihedralType)
+                AtomType, DihedralType, UnassignedAtomType)
 from parmed.utils.six.moves import range
 from parmed.utils.six import iteritems
 from collections import OrderedDict
@@ -54,13 +54,25 @@ class ParameterSet(object):
         Dictionary mapping the 4-element tuple of the names of the four atom
         types involved in the improper torsion (modeled as a Fourier series) to
         the DihedralType instances
-    cmap_types : dict((str,str,str,str,str):CmapType)
+    rb_torsion_types : dict((str,str,str,str):RBTorsionType)
+        Dictionary mapping the 4-element tuple of the names of the four atom
+        types involved in the Ryckaert-Bellemans torsion to the RBTorsionType
+        instances
+    cmap_types : dict((str,str,str,str,str,str,str,str):CmapType)
         Dictionary mapping the 5-element tuple of the names of the five atom
         types involved in the correction map to the CmapType instances
     nbfix_types : dict((str,str):(float,float))
         Dictionary mapping the 2-element tuple of the names of the two atom
         types whose LJ terms are modified to the tuple of the (epsilon,rmin)
         terms for that off-diagonal term
+    pair_types : dict((str,str):NonbondedExceptionType)
+        Dictionary mapping the 2-element tuple of atom type names for which
+        explicit exclusion rules should be applied
+    parametersets : list(str)
+        List of parameter set names processed in the current ParameterSet
+    residues : dict(str:ResidueTemplate|ResidueTemplateContainer)
+        A library of ResidueTemplate objects mapped to the residue name defined
+        in the force field library files
     """
 
     def __init__(self, *args):
@@ -80,6 +92,8 @@ class ParameterSet(object):
         self.pair_types = OrderedDict()
         self.parametersets = []
         self._combining_rule = 'lorentz'
+        self.residues = OrderedDict()
+        self.default_scee = self.default_scnb = 1.0
 
     def __copy__(self):
         other = type(self)()
@@ -132,6 +146,8 @@ class ParameterSet(object):
             typ = copy(item)
             other.cmap_types[key] = typ
             other.cmap_types[tuple(reversed(key))] = typ
+        for key, item in iteritems(self.residues):
+            other.residues[key] = copy(item)
         other.combining_rule = self.combining_rule
 
         return other
@@ -183,10 +199,9 @@ class ParameterSet(object):
         params = cls()
         found_dihed_type_list = dict()
         for atom in struct.atoms:
-            if atom.atom_type is None:
-                bond_type = atom.atom_type._bond_type
+            if atom.atom_type in (UnassignedAtomType, None):
                 atom_type = AtomType(atom.type, None, atom.mass,
-                                     atom.atomic_number, bond_type=bond_type)
+                                     atom.atomic_number)
                 atom_type.set_lj_params(atom.epsilon, atom.rmin,
                                         atom.epsilon_14, atom.rmin_14)
                 params.atom_types[atom.type] = atom_type
@@ -205,7 +220,7 @@ class ParameterSet(object):
                         params.bond_types[key] != bond.type):
                     raise ParameterError('Unequal bond types defined between '
                                          '%s and %s' % key)
-                continue
+                continue # pragma: no cover
             typ = copy(bond.type)
             key = (bond.atom1.type, bond.atom2.type)
             params.bond_types[key] = typ
@@ -218,13 +233,13 @@ class ParameterSet(object):
                         params.angle_types[key] != angle.type):
                     raise ParameterError('Unequal angle types defined between '
                                          '%s, %s, and %s' % key)
-                continue
+                continue # pragma: no cover
             typ = copy(angle.type)
             key = (angle.atom1.type, angle.atom2.type, angle.atom3.type)
             params.angle_types[key] = typ
             params.angle_types[tuple(reversed(key))] = typ
             if angle.funct == 5:
-                key = (angle.atom1.type, angle.atom3.type)
+                key = (angle.atom1.type, angle.atom2.type, angle.atom3.type)
                 params.urey_bradley_types[key] = NoUreyBradley
                 params.urey_bradley_types[tuple(reversed(key))] = NoUreyBradley
         for dihedral in struct.dihedrals:
@@ -232,16 +247,14 @@ class ParameterSet(object):
             key = (dihedral.atom1.type, dihedral.atom2.type,
                    dihedral.atom3.type, dihedral.atom4.type)
             if dihedral.improper:
-                key = cls._periodic_improper_key(
-                        dihedral.atom1, dihedral.atom2,
-                        dihedral.atom3, dihedral.atom4,
-                )
+                key = (dihedral.atom1.type, dihedral.atom2.type,
+                       dihedral.atom3.type, dihedral.atom4.type)
                 if key in params.improper_periodic_types:
                     if (not allow_unequal_duplicates and
                             params.improper_periodic_types[key] != dihedral.type):
                         raise ParameterError('Unequal dihedral types defined '
                                         'between %s, %s, %s, and %s' % key)
-                    continue
+                    continue # pragma: no cover
                 typ = copy(dihedral.type)
                 params.improper_periodic_types[key] = typ
             else:
@@ -263,7 +276,7 @@ class ParameterSet(object):
                                 raise ParameterError('Unequal dihedral types '
                                         'defined between %s, %s, %s, and %s' %
                                         key)
-                    continue
+                    continue # pragma: no cover
                 elif key in params.dihedral_types:
                     # We have one term of a potentially multi-term dihedral.
                     if isinstance(dihedral.type, DihedralTypeList):
@@ -316,30 +329,53 @@ class ParameterSet(object):
                         params.improper_types[key] != improper.type):
                     raise ParameterError('Unequal improper types defined '
                             'between %s, %s, %s, and %s' % key)
-                continue
+                continue # pragma: no cover
             params.improper_types[key] = copy(improper.type)
         for cmap in struct.cmaps:
             if cmap.type is None: continue
             key = (cmap.atom1.type, cmap.atom2.type, cmap.atom3.type,
+                    cmap.atom4.type, cmap.atom2.type, cmap.atom3.type,
                     cmap.atom4.type, cmap.atom5.type)
             if key in params.cmap_types:
                 if (not allow_unequal_duplicates and
                         cmap.type != params.cmap_types[key]):
                     raise ParameterError('Unequal CMAP types defined between '
-                            '%s, %s, %s, %s, and %s' % key)
-                continue
+                            '%s, %s, %s, %s, and %s' % (key[0], key[1], key[2],
+                                key[3], key[7]))
+                continue # pragma: no cover
             typ = copy(cmap.type)
             params.cmap_types[key] = typ
             params.cmap_types[tuple(reversed(key))] = typ
+        urey_brads_preassigned = len(params.urey_bradley_types) > 0
         for urey in struct.urey_bradleys:
             if urey.type is None or urey.type is NoUreyBradley: continue
-            key = (urey.atom1.type, urey.atom2.type)
-            if key not in params.urey_bradley_types:
+            key = _find_ureybrad_key(urey)
+            if key is None: continue
+            if urey_brads_preassigned and key not in params.urey_bradley_types:
                 warnings.warn('Angle corresponding to Urey-Bradley type not '
-                              'found')
+                              'found', ParameterWarning)
             typ = copy(urey.type)
             params.urey_bradley_types[key] = typ
             params.urey_bradley_types[tuple(reversed(key))] = typ
+        if not urey_brads_preassigned and len(params.urey_bradley_types) > 0:
+            # Go through all of our angle parameters and make sure there is a
+            # matching Urey-Bradley list. If there's not, that means there is no
+            # Urey-Bradley term for that angle
+            for key in params.angle_types:
+                if key in params.urey_bradley_types: continue
+                params.urey_bradley_types[key] = NoUreyBradley
+        for adjust in struct.adjusts:
+            if adjust.type is None: continue
+            key = (adjust.atom1.type, adjust.atom2.type)
+            if key in params.pair_types:
+                if (not allow_unequal_duplicates and
+                        params.pair_types[key] != adjust.type):
+                    raise ParameterError('Unequal pair types defined between '
+                                         '%s and %s' % key)
+                continue # pragma: no cover
+            typ = copy(adjust.type)
+            params.pair_types[key] = typ
+            params.pair_types[tuple(reversed(key))] = typ
         # Trap for Amoeba potentials
         if (struct.trigonal_angles or struct.out_of_plane_bends or
                 struct.torsion_torsions or struct.stretch_bends or
@@ -409,35 +445,6 @@ class ParameterSet(object):
                 if typedict[key1] == typedict[key2]:
                     typedict[key2] = typedict[key1]
 
-    @staticmethod
-    def _periodic_improper_key(atom1, atom2, atom3, atom4):
-        """
-        Controls how improper torsion keys are generated from Structures.
-        Different programs have different conventions as far as where the
-        "central" atom is placed. This function should be overridden for each
-        subclass
-
-        The default is to *always* put the central atom first, and assume it
-        comes first already if no central atom is detected. A central atom is
-        defined as one that is bonded to the other 3
-        """
-        all_atoms = set([atom1, atom2, atom3, atom4])
-        for atom in all_atoms:
-            for atom2 in all_atoms:
-                if atom2 is atom: continue
-                if not atom2 in atom.bond_partners:
-                    break
-            else:
-                # We found our central atom
-                others = sorted(all_atoms - set([atom]))
-                key = (atom.type, others[0].type, others[1].type,
-                       others[2].type)
-                break
-        else:
-            # No atom identified as "central". Just assume that the third is
-            key = (atom1.type, atom2.type, atom3.type, atom4.type)
-        return key
-
     @property
     def combining_rule(self):
         return self._combining_rule
@@ -447,3 +454,28 @@ class ParameterSet(object):
         if value not in ('lorentz', 'geometric'):
             raise ValueError('combining_rule must be "lorentz" or "geometric"')
         self._combining_rule = value
+
+    def typeify_templates(self):
+        """ Assign atom types to atom names in templates """
+        from parmed.modeller import ResidueTemplateContainer, ResidueTemplate
+        for name, residue in iteritems(self.residues):
+            if isinstance(residue, ResidueTemplateContainer):
+                for res in residue:
+                    for atom in res:
+                        atom.atom_type = self.atom_types[atom.type]
+            else:
+                assert isinstance(residue, ResidueTemplate), 'Wrong type!'
+                for atom in residue:
+                    atom.atom_type = self.atom_types[atom.type]
+
+def _find_ureybrad_key(urey):
+    """
+    Finds a key for a given Urey-Bradley by finding the middle atom in an angle.
+    Raises a ParameterWarning if no middle atom found
+    """
+    a1, a2 = urey.atom1, urey.atom2
+    shared_bond_partners = set(a1.bond_partners) & set(a2.bond_partners)
+    if len({a.type for a in shared_bond_partners}) != 1:
+        warnings.warn('Urey-Bradley %r shares multiple central atoms',
+                      ParameterWarning)
+    return (a1.type, list(shared_bond_partners)[0].type, a2.type)

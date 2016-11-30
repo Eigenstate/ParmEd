@@ -25,34 +25,82 @@ To provide a single interface for parsing *any* type of file, the
 :func:`load_file <parmed.formats.registry.load_file>` function takes a filename
 and any relevant arguments or keyword arguments for the supported file formats
 and calls the appropriate parsing function.  Supported file formats along with
-the extra supported keyword arguments (if applicable) are shown below:
+the extra supported keyword arguments (if applicable) are shown in the table
+below (the filename argument is omitted):
 
-* Amber ASCII restart files
-* Amber topology/MDL files (``xyz=None`` is the coordinate file name or numpy
-  array of coordinates, ``box=None`` is the array of unit cell lengths and
-  angles)
-* Amber ASCII trajectory (MDCRD) files (``natom`` is the *required* number of
-  atoms in the system, ``hasbox`` is the *required* boolean flag specifying
-  whether or not unit cell dimensions are present in the mdcrd file)
-* Amber NetCDF restart
-* Amber NetCDF trajectory file
-* Amber OFF residue template library files
-* PDBx/mmCIF files
-* CHARMM coordinate files
-* CHARMM restart files
-* Gromacs GRO files
-* Gromacs topology files (``defines=None`` is the (ordered) ``dict`` of
-  preprocessor defines to apply to the processing of the topology file,
-  ``parametrize=True`` is a flag to specify whether or not to apply parameters,
-  ``xyz=None`` is the file name of a coordinate file or an array of coordinates,
-  and ``box=None`` is the array of unit cell dimensions and angles)
-* SYBYL mol2 files and the R.E.D. mol3 extension (``structure=False`` is a flag
-  that determines whether or not the returned object is a :class:`Structure
-  <parmed.structure.Structure>` or :class:`ResidueTemplate
-  <parmed.modeller.residue.ResidueTemplate>`/:class:`ResidueTemplateContainer
-  <parmed.modeller.residue.ResidueTemplateContainer>` instance)
-* PDB files
-* CHARMM/XPLOR PSF files
++--------------------------+--------------------------------+
+| File type                | Supported arguments            |
++==========================+================================+
+| Amber ASCII restart file | None                           |
++--------------------------+--------------------------------+
+| Amber prmtop             | ``xyz``, ``box``               |
++--------------------------+--------------------------------+
+| Amber MDL (e.g., RISM)   | None                           |
++--------------------------+--------------------------------+
+| Amber MDCRD trajectory   | ``natom``\*, ``hasbox``\*      |
++--------------------------+--------------------------------+
+| Amber OFF library        | None                           |
++--------------------------+--------------------------------+
+| Amber frcmod/parm.dat    | list of filenames              |
++--------------------------+--------------------------------+
+| PDBx/mmCIF file          | ``skip_bonds``                 |
++--------------------------+--------------------------------+
+| CHARMM coordinate file   | None                           |
++--------------------------+--------------------------------+
+| CHARMM restart file      | None                           |
++--------------------------+--------------------------------+
+| Gromacs GRO file         | ``skip_bonds``                 |
++--------------------------+--------------------------------+
+| Gromacs topology file    | ``defines``, ``parametrize``   |
+|                          | ``xyz``, ``box``               |
++--------------------------+--------------------------------+
+| Mol2 and Mol3 files      | ``structure``                  |
++--------------------------+--------------------------------+
+| NetCDF restart file      | None                           |
++--------------------------+--------------------------------+
+| NetCDF trajectory file   | None                           |
++--------------------------+--------------------------------+
+| PDB file                 | ``skip_bonds``                 |
++--------------------------+--------------------------------+
+| PQR file                 | ``skip_bonds``                 |
++--------------------------+--------------------------------+
+| PSF file                 | None                           |
++--------------------------+--------------------------------+
+| Serialized System XML    | None                           |
++--------------------------+--------------------------------+
+| Serialized State XML     | None                           |
++--------------------------+--------------------------------+
+| Serialized Integrator    | None                           |
+| XML file                 |                                |
++--------------------------+--------------------------------+
+| ForceField XML file      | None                           |
++--------------------------+--------------------------------+
+\*These arguments are *required* when parsing the corresponding format file
+
+The optional keyword arguments are described below:
+
+* ``xyz`` -- Either a file name for a coordinate file or an array with the
+  coordinates. If the unit cell information is stored in the coordinate file, it
+  is used (unless an explicit ``box`` argument is given; see below). If the file
+  is a trajectory file, the first frame is used for the coordinates.
+* ``box`` -- The unit cell dimensions in Angstroms (and angles in degrees).
+* ``natom`` -- The number of atoms from which the file was written
+* ``hasbox`` -- Whether unit cell information is stored in this trajectory file
+* ``defines`` -- ``dict`` of preprocessor defines (order is respected if given
+  via an ``OrderedDict``)
+* ``parametrize`` -- If ``True``, parameters are assigned from the parameter
+  database.  If ``False``, they are not (default is ``True``).
+* ``structure`` -- If ``True``, return the Mol2/Mol3 file as a :class:`Structure
+  <parmed.structure.Structure>` instance. Default is ``False``
+* ``skip_bonds`` -- If ``True``, no attempt is made to identify covalent bonds
+  between any atoms for these formats. If ``False`` (default), bonds are first
+  assigned by comparing to standard residue templates, then based on distance
+  criteria for any atom not specified within the templates. This has a
+  side-effect of improving element identification for PDB files that have no
+  element columns specified as well as substantially improving element
+  identification for ions in GRO files. You are suggested to keep the default
+  (``False``) unless you are *only* using the coordinates, in which case setting
+  ``skip_bonds`` to ``True`` will result in significantly improved performance.
 
 :func:`load_file` automatically inspects the contents of the file with the given
 name to determine what format the file is based on the first couple lines.
@@ -66,6 +114,12 @@ using Gzip or Bzip2, respectively (except for some binary file formats, like
 NetCDF). Furthermore, URLs beginning with ``http://``, ``https://``, or
 ``ftp://`` are valid file names and will result in the remote file being
 downloaded and processed (again, in-memory).
+
+Finally, to make it so that you can always retrieve a :class:`Structure
+<parmed.structure.Structure>` instance from file types that support returning
+one by passing the ``structure=True`` keyword to ``load_file``. If this argument
+is not supported by the resulting file type, it is simply ignored, as is the
+``natom``, ``hasbox``, and ``skip_bonds`` keywords.
 
 Writing files with :meth:`Structure.save <parmed.structure.Structure.save>`
 ---------------------------------------------------------------------------
@@ -94,7 +148,12 @@ supported extra keyword arguments, are detailed in the following table.
 |              |                         |                |  ``renumber``,           |
 +--------------+-------------------------+----------------+  ``coordinates``,        |
 | PDBx/mmCIF   | ``.cif``, ``.pdbx``     | ``cif``        |  ``altlocs``,            |
-|              |                         |                |  ``write_anisou``        |
+|              |                         |                |  ``write_anisou``,       |
+|              |                         |                |  ``standard_resnames``   |
++--------------+-------------------------+----------------+--------------------------+
+| PQR          | ``.pqr``                | ``pqr``        | ``renumber``,            |
+|              |                         |                | ``coordinates``,         |
+|              |                         |                | ``standard_resnames``    |
 +--------------+-------------------------+----------------+--------------------------+
 | Amber prmtop | ``.parm7``, ``.prmtop`` | ``amber``      |  None                    |
 +--------------+-------------------------+----------------+--------------------------+
@@ -140,6 +199,10 @@ Keywords
 * ``write_anisou`` -- If ``True``, print anistropic B-factors for the various
   atoms (either as a separate CIF section or as ``ANISOU`` records in a PDB
   file). Default is ``False``
+* ``standard_resnames`` -- If ``True``, residue names will be regularlized from
+  common alternatives back to the PDB standard. For example, ASH and GLH will be
+  translated to ASP and GLU, respectively, as they often refer to different
+  protomers of aspartate and glutamate.
 * ``vmd`` -- If ``True``, write a VMD-style PSF file. This is very similar to
   XPLOR format PSF files. Default is ``False``.
 * ``combine`` -- Can be ``None`` to combine no molecules when writing a GROMACS
@@ -190,9 +253,9 @@ be found in the ``test/files/`` directory of the ParmEd source code::
     ... pdb = pmd.load_file('4lzt.pdb')
     >>> cif = pmd.load_file('4LZT.cif')
     >>> pdb
-    <Structure 1164 atoms; 274 residues; 0 bonds; PBC (triclinic); NOT parametrized>
+    <Structure 1164 atoms; 274 residues; 1043 bonds; PBC (triclinic); NOT parametrized>
     >>> cif
-    <Structure 1164 atoms; 274 residues; 0 bonds; PBC (triclinic); NOT parametrized>
+    <Structure 1164 atoms; 274 residues; 1043 bonds; PBC (triclinic); NOT parametrized>
     >>> # Load a Gromacs topology file -- only works with Gromacs installed
     ... top = pmd.load_file('1aki.ff99sbildn.top')
     >>> top
@@ -213,8 +276,8 @@ supported::
     ... pdb.save('test_pdb.cif')
     >>> # Check the resulting saved files
     ... pmd.load_file('test_parm.pdb')
-    <Structure 1654 atoms; 108 residues; 0 bonds; NOT parametrized>
+    <Structure 1654 atoms; 108 residues; 1670 bonds; NOT parametrized>
     >>> pmd.load_file('test_cif.pdb')
-    <Structure 1164 atoms; 274 residues; 0 bonds; PBC (triclinic); NOT parametrized>
+    <Structure 1164 atoms; 274 residues; 1043 bonds; PBC (triclinic); NOT parametrized>
     >>> pmd.load_file('test_pdb.cif')
-    <Structure 1164 atoms; 274 residues; 0 bonds; PBC (triclinic); NOT parametrized>
+    <Structure 1164 atoms; 274 residues; 1043 bonds; PBC (triclinic); NOT parametrized>

@@ -181,6 +181,9 @@ class AmberOFFLibrary(object):
                 templ = ResidueTemplate(name)
             templ.add_atom(atom)
             line = fileobj.readline()
+            # Skip blank lines
+            while line and not line.strip():
+                line = fileobj.readline()
         container.append(templ)
         if nres > 1:
             start_atoms = []
@@ -219,7 +222,9 @@ class AmberOFFLibrary(object):
             raise RuntimeError('Error processing boundbox table entries')
         else:
             if hasbox > 0:
-                angle *= RAD_TO_DEG
+                if angle < 3.15:
+                    # No box is this acute -- must be in radians
+                    angle *= RAD_TO_DEG
                 container.box = [a, b, c, angle, angle, angle]
         # Get the child sequence entry
         line = fileobj.readline()
@@ -252,12 +257,12 @@ class AmberOFFLibrary(object):
         if head > 0 and nres == 1:
             templ.head = templ[head-1]
         elif head > 0 and nres > 1:
-            if head < sum([len(r) for r in container]):
+            if head < sum((len(r) for r in container)):
                 raise RuntimeError('HEAD on multi-residue unit not supported')
         if tail > 0 and nres == 1:
             templ.tail = templ[tail-1]
         elif tail > 0 and nres > 1:
-            if tail < sum([len(r) for r in container]):
+            if tail < sum((len(r) for r in container)):
                 warnings.warn('TAIL on multi-residue unit not supported (%s). '
                               'Ignored...' % name, AmberWarning)
         # Get the connectivity array to set bonds
@@ -326,11 +331,13 @@ class AmberOFFLibrary(object):
             raise RuntimeError('Found residue %s while processing residue %s' %
                                (rematch.groups()[0], name))
         for i in range(nres):
-            c1,c2,c3,c4,c5,c6 = [int(x) for x in fileobj.readline().split()]
-            if templ.head is not None and templ.head is not templ[c1-1]:
-                warnings.warn('HEAD atom is not connect0')
-            if templ.tail is not None and templ.tail is not templ[c2-1]:
-                warnings.warn('TAIL atom is not connect1')
+            c1,c2,c3,c4,c5,c6 = (int(x) for x in fileobj.readline().split())
+            if (c1 > 0 and templ.head is not None and
+                    templ.head is not templ[c1-1]):
+                raise RuntimeError('HEAD atom is not connect0')
+            if (c2 > 0 and templ.tail is not None and
+                    templ.tail is not templ[c2-1]):
+                raise RuntimeError('TAIL atom is not connect1')
             for i in (c3, c4, c5, c6):
                 if i == 0: continue
                 templ.connections.append(templ[i-1])
@@ -361,8 +368,7 @@ class AmberOFFLibrary(object):
             elif typ == 'w':
                 container[i].type = SOLVENT
             elif typ != '?':
-                warnings.warn('Unknown residue type "%s"' % typ,
-                              AmberWarning)
+                warnings.warn('Unknown residue type "%s"' % typ, AmberWarning)
             if nres > 1:
                 container[i].name = resname
         # Get the residues sequence table
@@ -400,7 +406,7 @@ class AmberOFFLibrary(object):
                                (rematch.groups()[0], name))
         for res in container:
             for atom in res:
-                vx, vy, vz = [float(x) for x in fileobj.readline().split()]
+                vx, vy, vz = (float(x) for x in fileobj.readline().split())
                 atom.vx, atom.vy, atom.vz = vx, vy, vz
 
         if nres > 1:
@@ -474,7 +480,7 @@ class AmberOFFLibrary(object):
             if res.box[3] == res.box[4] == res.box[5]:
                 dest.write(' %f\n' % res.box[3])
             else:
-                raise ValueError('Cannot write boxes with different angles')
+                raise RuntimeError('Cannot write boxes with different angles')
             dest.write(' %f\n' % res.box[0])
             dest.write(' %f\n' % res.box[1])
             dest.write(' %f\n' % res.box[2])
@@ -495,10 +501,12 @@ class AmberOFFLibrary(object):
         if any(len(r) > 1 for r in res):
             dest.write('!entry.%s.unit.connectivity table  int atom1x  '
                        'int atom2x  int flags\n' % res.name)
+            base = 1
             for r in res:
                 for bond in r.bonds:
-                    dest.write(' %d %d 1\n' % (bond.atom1.idx+1,
-                                               bond.atom2.idx+1))
+                    dest.write(' %d %d 1\n' % (bond.atom1.idx+base,
+                                               bond.atom2.idx+base))
+                base += len(r)
         dest.write('!entry.%s.unit.hierarchy table  str abovetype  int '
                    'abovex  str belowtype  int belowx\n' % res.name)
         c = 1
@@ -516,15 +524,17 @@ class AmberOFFLibrary(object):
                 dest.write(' %.6g %.6g %.6g\n' % (atom.xx, atom.xy, atom.xz))
         dest.write('!entry.%s.unit.residueconnect table  int c1x  int c2x  '
                    'int c3x  int c4x  int c5x  int c6x\n' % res.name)
+        c = 1
         for r in res:
-            # Make the CONECT1 and 0 default to 1 so that the TREE gets set
-            # correctly by tleap. Not used for anything else...
-            conn = [1, 1, 0, 0, 0, 0]
+            # Make the CONECT1 and 0 default to first and last atom so that the
+            # TREE gets set correctly by tleap. Not used for anything else...
+            conn = [c, c+len(r)-1, 0, 0, 0, 0]
             if r.head is not None: conn[0] = r.head.idx + 1
             if r.tail is not None: conn[1] = r.tail.idx + 1
-            for i, at in enumerate(r.connections):
+            for i, at in enumerate(r.connections[:4]):
                 conn[i+2] = at.idx + 1
             dest.write(' %d %d %d %d %d %d\n' % tuple(conn))
+            c += len(r)
         dest.write('!entry.%s.unit.residues table  str name  int seq  int '
                    'childseq  int startatomx  str restype  int imagingx\n' %
                    res.name)
@@ -543,7 +553,7 @@ class AmberOFFLibrary(object):
                               AmberWarning)
                 typ = '?'
             dest.write(' "%s" %d %d %d "%s" %d\n' % (r.name, i+1, 1+len(r), c,
-                       typ, _imaging_atom(r)))
+                       typ, _imaging_atom(r)+c))
             c += len(r)
         dest.write('!entry.%s.unit.residuesPdbSequenceNumber array int\n' %
                    res.name)
@@ -602,4 +612,4 @@ def _imaging_atom(res):
             masses[i] = atom.mass
     com = center_of_mass(coords, masses)
     diff = coords - com
-    return np.argmin((diff * diff).sum(axis=1)) + 1
+    return np.argmin((diff * diff).sum(axis=1))

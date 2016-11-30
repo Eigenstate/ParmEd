@@ -4,6 +4,7 @@ This module contains functionality relevant to loading and parsing GROMACS GRO
 """
 from __future__ import print_function, division, absolute_import
 
+from contextlib import closing
 from parmed.constants import TINY
 from parmed.exceptions import GromacsError
 from parmed.formats.registry import FileFormatType
@@ -16,11 +17,56 @@ from parmed.topologyobjects import Atom, ExtraPoint
 from parmed import unit as u
 from parmed.utils.io import genopen
 from parmed.utils.six import add_metaclass, string_types
-from contextlib import closing
-try:
-    import numpy as np
-except ImportError:
-    np = None
+
+class _AtomLineParser(object):
+    """ Parses atom lines from GRO files """
+    def __init__(self):
+        self._digits = None
+        self._pdeci = 0
+        self._ndeci = 0
+
+    def read(self, line):
+        """ Reads a line
+
+        Parameters
+        ----------
+        line : str
+            A line with an atom record from a GRO file
+
+        Returns
+        -------
+        atom, resname, resnum : Atom, str, int
+            The Atom instance, residue name, and residue number containing the
+            atom
+        """
+        resnum = int(line[:5])
+        resname = line[5:10].strip()
+        atomname = line[10:15].strip()
+        elem = element_by_name(atomname)
+        atomic_number = AtomicNum[elem]
+        mass = Mass[elem]
+        atnum = int(line[15:20])
+        if atomic_number == 0:
+            atom = ExtraPoint(name=atomname, number=atnum)
+        else:
+            atom = Atom(atomic_number=atomic_number, name=atomname,
+                        number=atnum, mass=mass)
+        if self._digits is None:
+            self._pdeci = line.index('.', 20)
+            self._ndeci = line.index('.', self._pdeci+1)
+            self._digits = self._ndeci - self._pdeci
+        atom.xx, atom.xy, atom.xz = (
+                float(line[20+i*self._digits:20+(i+1)*self._digits])*10
+                    for i in range(3)
+        )
+        wbeg = 20 + self._digits * 3
+        wend = wbeg + self._digits
+        if line[wbeg:wend].strip():
+            atom.vx, atom.vy, atom.vz = (
+                    float(line[wbeg+i*self._digits:wend+i*self._digits])*10
+                    for i in range(3)
+            )
+        return atom, resname, resnum
 
 @add_metaclass(FileFormatType)
 class GromacsGroFile(object):
@@ -75,13 +121,20 @@ class GromacsGroFile(object):
     #===================================================
 
     @staticmethod
-    def parse(filename):
+    def parse(filename, skip_bonds=False):
         """ Parses a Gromacs GRO file
 
         Parameters
         ----------
         filename : str or file-like
             Name of the file or the GRO file object
+        skip_bonds : bool, optional
+            If True, skip trying to assign bonds. This can save substantial time
+            when parsing large files with non-standard residue names. However,
+            no bonds are assigned. This is OK if, for instance, the GRO file is
+            being parsed simply for its coordinates. This will also reduce the
+            accuracy of assigned atomic numbers for typical ions. Default is
+            False.
 
         Returns
         -------
@@ -103,43 +156,23 @@ class GromacsGroFile(object):
                 natom = int(fileobj.readline().strip())
             except ValueError:
                 raise GromacsError('Could not parse %s as GRO file' % filename)
-            digits = None
+            line_parser = _AtomLineParser()
             for i, line in enumerate(fileobj):
                 if i == natom: break
                 try:
-                    resnum = int(line[:5])
-                    resname = line[5:10].strip()
-                    atomname = line[10:15].strip()
-                    elem = element_by_name(atomname)
-                    atomic_number = AtomicNum[elem]
-                    mass = Mass[elem]
-                    atnum = int(line[15:20])
-                    if atomic_number == 0:
-                        atom = ExtraPoint(name=atomname, number=atnum)
-                    else:
-                        atom = Atom(atomic_number=atomic_number, name=atomname,
-                                    number=atnum, mass=mass)
-                    if digits is None:
-                        pdeci = line.index('.', 20)
-                        ndeci = line.index('.', pdeci+1)
-                        digits = ndeci - pdeci
-                    atom.xx, atom.xy, atom.xz = (
-                            float(line[20+i*digits:20+(i+1)*digits])*10
-                                for i in range(3)
-                    )
-                    i = 4
-                    wbeg = (pdeci-4)+(5+ndeci)*(i-1)
-                    wend = (pdeci-4)+(5+ndeci)*i
-                    if line[wbeg:wend].strip():
-                        atom.vx, atom.vy, atom.vz = (
-                                float(line[(pdeci-3)+(6+ndeci)*i:
-                                           (pdeci-3)+(6+ndeci)*(i+1)])*10
-                                for i in range(3, 6)
-                        )
+                    atom, resname, resnum = line_parser.read(line)
                 except (ValueError, IndexError):
                     raise GromacsError('Could not parse the atom record of '
                                        'GRO file %s' % filename)
                 struct.add_atom(atom, resname, resnum)
+            else:
+                # If no box exists, the break did not hit, so line still
+                # contains the last atom (which cannot be interpreted as a box).
+                # This wipes out line (IFF fileobj reached the line)
+                line = fileobj.readline()
+                if i+1 != natom:
+                    raise GromacsError('Truncated GRO file. Found %d of %d '
+                                       'atoms' % (i+1, natom))
             # Get the box from the last line if it's present
             if line.strip():
                 try:
@@ -159,11 +192,13 @@ class GromacsGroFile(object):
                     a, b, c = leng.value_in_unit(u.angstroms)
                     alpha, beta, gamma = ang.value_in_unit(u.degrees)
                     struct.box = [a, b, c, alpha, beta, gamma]
-                if np is not None:
-                    struct.box = np.array(struct.box)
         finally:
             if own_handle:
                 fileobj.close()
+
+        # Assign bonds (and improved element guesses)
+        if not skip_bonds:
+            struct.assign_bonds()
 
         return struct
 

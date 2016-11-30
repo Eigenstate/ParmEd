@@ -6,7 +6,10 @@ from __future__ import division, print_function, absolute_import
 
 __all__ = ['load_topology']
 
+from collections import defaultdict
+import numpy as np
 from parmed.exceptions import OpenMMWarning
+from parmed.formats import load_file
 from parmed.geometry import box_vectors_to_lengths_and_angles
 from parmed.periodic_table import Element
 from parmed.structure import Structure
@@ -18,24 +21,10 @@ from parmed import unit as u
 from parmed.utils.decorators import needs_openmm
 from parmed.utils.six import iteritems, string_types
 from parmed.utils.six.moves import range
-from collections import defaultdict
-try:
-    import numpy as np
-    def create_array(array):
-        return np.asarray(array)
-except ImportError:
-    np = None
-    def create_array(array):
-        return array
-import os
-try:
-    import simtk.openmm as mm
-except ImportError:
-    pass
 import warnings
 
 @needs_openmm
-def load_topology(topology, system=None):
+def load_topology(topology, system=None, xyz=None, box=None):
     """
     Creates a :class:`parmed.structure.Structure` instance from an OpenMM
     Topology, optionally filling in parameters from a System
@@ -49,6 +38,12 @@ def load_topology(topology, system=None):
         Structure. If a string is given, it will be interpreted as the file name
         of an XML-serialized System, and it will be deserialized into a System
         before used to supply parameters
+    xyz : str or array of float
+        Name of a file containing coordinate information or an array of
+        coordinates. If file has unit cell information, it also uses that
+        information unless ``box`` (below) is also specified
+    box : array of 6 floats
+        Unit cell dimensions
 
     Returns
     -------
@@ -77,6 +72,7 @@ def load_topology(topology, system=None):
     NBFIX (off-diagonal L-J modifications) and the 12-6-4 potential, will not be
     processed and will result in an unknown functional form
     """
+    import simtk.openmm as mm
     struct = Structure()
     atommap = dict()
     for c in topology.chains():
@@ -102,15 +98,35 @@ def load_topology(topology, system=None):
         ang = ang.value_in_unit(u.degrees)
         struct.box = [leng[0], leng[1], leng[2], ang[0], ang[1], ang[2]]
 
+    loaded_box = False
+
+    if xyz is not None:
+        if isinstance(xyz, string_types):
+            xyz = load_file(xyz, skip_bonds=True)
+            struct.coordinates = xyz.coordinates
+            if struct.box is not None:
+                if xyz.box is not None:
+                    loaded_box = True
+                    struct.box = xyz.box
+        else:
+            struct.coordinates = xyz
+
+    if box is not None:
+        loaded_box = True
+        struct.box = box
+
     if struct.box is not None:
-        struct.box = create_array(struct.box)
+        struct.box = np.asarray(struct.box)
 
     if system is None:
         return struct
 
     if isinstance(system, string_types):
-        with open(system, 'r') as f:
-            system = mm.XmlSerializer.deserialize(f.read())
+        system = load_file(system)
+
+    if not isinstance(system, mm.System):
+        raise TypeError('system must be an OpenMM System object or serialized '
+                        'XML of an OpenMM System object')
 
     # We have a system, try to extract parameters from it
     if len(struct.atoms) != system.getNumParticles():
@@ -124,13 +140,14 @@ def load_topology(topology, system=None):
                       mm.GBSAOBCForce, mm.CustomGBForce)
 
     if system.usesPeriodicBoundaryConditions():
-        vectors = system.getDefaultPeriodicBoxVectors()
-        leng, ang = box_vectors_to_lengths_and_angles(*vectors)
-        leng = leng.value_in_unit(u.angstroms)
-        ang = ang.value_in_unit(u.degrees)
-        struct.box = create_array(
-                [leng[0], leng[1], leng[2], ang[0], ang[1], ang[2]]
-        )
+        if not loaded_box:
+            vectors = system.getDefaultPeriodicBoxVectors()
+            leng, ang = box_vectors_to_lengths_and_angles(*vectors)
+            leng = leng.value_in_unit(u.angstroms)
+            ang = ang.value_in_unit(u.degrees)
+            struct.box = np.asarray(
+                    [leng[0], leng[1], leng[2], ang[0], ang[1], ang[2]]
+            )
     else:
         struct.box = None
 
@@ -210,7 +227,7 @@ def _process_angle(struct, force):
 def _process_urey_bradley(struct, force):
     """ Adds Urey-Bradley parameters to the structure """
     if not struct.angles:
-        warnings.warn('Adding what seems to be Urey-Bradley terms before '
+        warnings.warn('Adding what seems to be Urey-Bradley terms before ' # pragma: no cover
                       'Angles. This is unexpected, but the parameters will '
                       'all be present in one form or another.', OpenMMWarning)
     typemap = dict()
@@ -219,7 +236,7 @@ def _process_urey_bradley(struct, force):
         ai, aj = struct.atoms[i], struct.atoms[j]
         key = (req._value, k._value)
         if struct.angles and ai not in aj.angle_partners:
-            warnings.warn('Adding what seems to be Urey-Bradley terms, but '
+            warnings.warn('Adding what seems to be Urey-Bradley terms, but ' # pragma: no cover
                           'atoms %d and %d do not appear to be angled to each '
                           'other. Parameters will all be present, but may not '
                           'be in expected places.' % (ai.idx, aj.idx),
@@ -264,10 +281,10 @@ def _process_rbtorsion(struct, force):
         try:
             key = (c0._value, c1._value, c2._value,
                    c3._value, c4._value, c5._value)
-            f = 1
-        except AttributeError:
-            key = (c0, c1, c2, c3, c4, c5)
-            f = u.kilojoules_per_mole
+            f = 1                          # pragma: no cover
+        except AttributeError:             # pragma: no cover
+            key = (c0, c1, c2, c3, c4, c5) # pragma: no cover
+            f = u.kilojoules_per_mole      # pragma: no cover
         if key in typemap:
             dihed_type = typemap[key]
         else:
@@ -324,9 +341,9 @@ def _process_cmap(struct, force):
         size, grid = force.getMapParameters(ii)
         # Future-proof in case units start getting added to these maps
         if u.is_quantity(grid):
-            typ = CmapType(size, grid)
+            typ = CmapType(size, grid)                       # pragma: no cover
         else:
-            typ = CmapType(size, grid*u.kilojoules_per_mole)
+            typ = CmapType(size, grid*u.kilojoules_per_mole) # pragma: no cover
         cmap_types.append(typ)
         typ.grid = typ.grid.T.switch_range()
         typ.used = False
@@ -334,9 +351,9 @@ def _process_cmap(struct, force):
     for ii in range(force.getNumTorsions()):
         mapidx, ii, ij, ik, il, ji, jj, jk, jl = force.getTorsionParameters(ii)
         if ij != ji or ik != jj or il != jk:
-            warnings.warn('Non-continuous CMAP torsions detected. Not '
+            warnings.warn('Non-continuous CMAP torsions detected. Not ' # pragma: no cover
                           'supported.', OpenMMWarning)
-            continue
+            continue # pragma: no cover
         ai, aj, ak = struct.atoms[ii], struct.atoms[ij], struct.atoms[ik]
         al, am = struct.atoms[il], struct.atoms[jl]
         cmap_type = cmap_types[mapidx]
@@ -362,8 +379,8 @@ def _process_nonbonded(struct, force):
         else:
             element_typemap[atype_name] += 1
             atype_name = '%s%d' % (atype_name, element_typemap[atype_name])
-            atom_type = AtomType(atype_name, None, atom.mass,
-                                 atom.atomic_number)
+            typemap[key] = atom_type = AtomType(atype_name, None, atom.mass,
+                                                atom.atomic_number)
         atom.charge = chg.value_in_unit(u.elementary_charge)
         rmin = sig.value_in_unit(u.angstroms) * 2**(1/6) / 2 # to rmin/2
         eps = eps.value_in_unit(u.kilocalories_per_mole)
@@ -375,9 +392,12 @@ def _process_nonbonded(struct, force):
     bond_graph_exceptions = defaultdict(set)
     for atom in struct.atoms:
         for a2 in atom.bond_partners:
-            bond_graph_exceptions[atom].add(a2)
+            if atom is not a2:
+                bond_graph_exceptions[atom].add(a2)
             for a3 in a2.bond_partners:
-                bond_graph_exceptions[atom].add(a3)
+                if a3 is atom: continue
+                if atom is not a3:
+                    bond_graph_exceptions[atom].add(a3)
 
     # TODO should we compress exception types?
     for ii in range(force.getNumExceptions()):
@@ -405,6 +425,7 @@ def _process_nonbonded(struct, force):
     # Check that all of our exceptions are accounted for
     for ai, exceptions in iteritems(bond_graph_exceptions):
         if exceptions - explicit_exceptions[ai]:
+            struct.unknown_functional = True
             warnings.warn('Detected incomplete exceptions. Not supported.',
                           OpenMMWarning)
-            struct.unknown_functional = True
+            break

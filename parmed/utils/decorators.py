@@ -10,11 +10,15 @@ try:
     try:
         from simtk.openmm.app.internal import unitcell
     except ImportError:
+        unitcell = None
         SUPPORTED_VERSION = False
     else:
         SUPPORTED_VERSION = True
 except ImportError:
     HAS_OPENMM = False
+else:
+    del mm, app, unitcell
+import warnings
 
 def needs_openmm(fcn):
     global HAS_OPENMM
@@ -28,3 +32,10 @@ def needs_openmm(fcn):
 
     return new_fcn
 
+def deprecated(fcn):
+    @wraps(fcn)
+    def new_fcn(*args, **kwargs):
+        warnings.warn('%s is deprecated and will be removed in the future' %
+                      fcn.__name__, DeprecationWarning)
+        return fcn(*args, **kwargs)
+    return new_fcn

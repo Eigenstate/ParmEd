@@ -102,6 +102,7 @@ I will post any slides pertaining to ParmEd from talks that I've given here, in
 the hopes that they may be helpful or informative.
 
 - `April 10, 2015 at MSKCC <http://parmed.github.io/ParmEd/ParmEd_Slides_08Apr2015.pdf>`_
+- `March 19, 2016 at the Amber developer meeting at UCSD <http://parmed.github.io/ParmEd/ParmEd_Amber_Meeting2016.pdf>`_
 
 Getting Started
 ---------------
@@ -133,7 +134,7 @@ number of atoms, residues, and even various citation information. For example::
 
     >>> import parmed as pmd
     >>> pmd.download_PDB('4lzt')
-    <Structure 1164 atoms; 274 residues; 0 bonds; PBC; NOT parametrized>
+    <Structure 1164 atoms; 274 residues; 1043 bonds; PBC (triclinic); NOT parametrized>
     >>> lysozyme = pmd.download_PDB('4lzt')
     >>> lysozyme.authors
     'M.A.WALSH,T.SCHNEIDER,L.C.SIEKER,Z.DAUTER,V.LAMZIN,K.S.WILSON'
@@ -145,16 +146,16 @@ number of atoms, residues, and even various citation information. For example::
     274
     >>> # Get all backbone atoms
     ... lysozyme['@CA,C,N']
-    <Structure 393 atoms; 135 residues; 0 bonds; NOT parametrized>
+    <Structure 393 atoms; 135 residues; 386 bonds; NOT parametrized>
 
 A simple example demonstrating the file conversion capabilities is to convert a
 PDBx/mmCIF file into the more commonly supported PDB format::
 
     >>> import parmed as pmd
-    >>> pmd.write_PDB(pmd.download_CIF('4lzt'), '4lzt.pdb')
+    >>> pmd.download_CIF('4lzt').save('4lzt.pdb')
     >>> # Now read in the PDB file we just created
-    ... pmd.read_PDB('4lzt.pdb')
-    <Structure 1164 atoms; 274 residues; 0 bonds; PBC; NOT parametrized>
+    ... pmd.load_file('4lzt.pdb')
+    <Structure 1164 atoms; 274 residues; 1043 bonds; PBC; NOT parametrized>
 
 Program and API Reference
 -------------------------
@@ -175,6 +176,17 @@ Program and API Reference
    OpenMM Functionality <openmm>
 
 Click the "modules" link at the top of the page for a full API reference.
+
+Contributing
+------------
+
+If you would like to contribute, please head over to the Github repository at
+https://github.com/ParmEd/ParmEd and feel free to jump right in! New issues
+and pull requests are always welcome.
+
+If you want to start contributing to the code base, please check out `the
+developer's documentation <devdoc>`_ for general information about style guides
+and the like.
 
 Search
 ------

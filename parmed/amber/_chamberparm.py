@@ -14,7 +14,7 @@ This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU Lesser General Public License for more details.
-   
+
 You should have received a copy of the GNU Lesser General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330,
@@ -23,15 +23,14 @@ Boston, MA 02111-1307, USA.
 from __future__ import division, print_function
 
 from parmed.amber._amberparm import AmberParm
-from parmed.constants import (NTYPES, NPHIH, MPHIA, NPHIA, NATYP, IFBOX, TINY,
-            NATOM, SMALL)
+from parmed.constants import (NTYPES, NATYP, IFBOX, TINY, NATOM, SMALL,
+                              DEG_TO_RAD, RAD_TO_DEG)
 from parmed.exceptions import AmberError, AmberWarning
 from parmed.topologyobjects import (UreyBradley, Improper, Cmap, BondType,
-                                    DihedralType, ImproperType, CmapType,
-                                    ExtraPoint)
+                                    ImproperType, CmapType, ExtraPoint)
 from parmed.utils.six.moves import zip, range
-import copy
-from math import sqrt
+import copy as _copy
+from math import sqrt, pi
 import warnings
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -92,9 +91,6 @@ class ChamberParm(AmberParm):
     instances
     """
 
-    solvent_residues = ('WAT', 'TIP3', 'HOH', 'TIP4', 'TIP5', 'SPCE', 'SPC',
-                        'SOL')
-
     #===================================================
 
     def initialize_topology(self, xyz=None, box=None):
@@ -106,7 +102,18 @@ class ChamberParm(AmberParm):
         self.LJ_14_radius = []
         self.LJ_14_depth = []
         AmberParm.initialize_topology(self, xyz, box)
-      
+
+    #===================================================
+
+    def _copy_lj_data(self, other):
+        """ Copies Lennard-Jones lists and dicts from myself to a copy """
+        super(ChamberParm, self)._copy_lj_data(other)
+        other.LJ_14_radius = _copy.copy(self.LJ_14_radius)
+        other.LJ_14_depth = _copy.copy(self.LJ_14_depth)
+        for atom in other.atoms:
+            other.LJ_14_radius[atom.nb_idx-1] = atom.atom_type.rmin_14
+            other.LJ_14_depth[atom.nb_idx-1] = atom.atom_type.epsilon_14
+
     #===================================================
 
     def load_pointers(self):
@@ -129,7 +136,7 @@ class ChamberParm(AmberParm):
     #===================================================
 
     def load_structure(self):
-        """ 
+        """
         Loads all of the topology instance variables. This is necessary if we
         actually want to modify the topological layout of our system
         (like deleting atoms)
@@ -145,7 +152,7 @@ class ChamberParm(AmberParm):
     #===================================================
 
     @classmethod
-    def from_structure(cls, struct):
+    def from_structure(cls, struct, copy=False):
         """
         Take a Structure instance and initialize a ChamberParm instance from
         that data.
@@ -154,11 +161,30 @@ class ChamberParm(AmberParm):
         ----------
         struct : Structure
             The input structure from which to construct a ChamberParm instance
+        copy : bool
+            If True, the input struct is deep-copied to make sure it does not
+            share any objects with the original ``struct``. Default is False
+
+        Returns
+        -------
+        inst : :class:`ChamberParm`
+            The ChamberParm instance derived from the input structure
+
+        Notes
+        -----
+        Due to the nature of the prmtop file, struct almost *always* returns a
+        deep copy. The one exception is when struct is already of type
+        :class:`ChamberParm`, in which case the original object is returned
+        unless ``copy`` is ``True``.
         """
+        if isinstance(struct, cls):
+            if copy:
+                return _copy.copy(struct)
+            return struct
         if (struct.rb_torsions or struct.trigonal_angles or struct.pi_torsions
                 or struct.out_of_plane_bends or struct.stretch_bends
                 or struct.torsion_torsions or struct.multipole_frames):
-            raise ValueError('ChamberParm does not support all potential terms '
+            raise TypeError('ChamberParm does not support all potential terms '
                              'defined in the input Structure')
         inst = struct.copy(cls, split_dihedrals=True)
         inst.update_dihedral_exclusions()
@@ -179,14 +205,14 @@ class ChamberParm(AmberParm):
         inst.LJ_14_radius = [0 for i in range(ntyp)]
         inst.LJ_14_depth = [0 for i in range(ntyp)]
         for atom in inst.atoms:
-            inst.LJ_radius[atom.nb_idx-1] = atom.atom_type.rmin
-            inst.LJ_depth[atom.nb_idx-1] = atom.atom_type.epsilon
-            inst.LJ_14_radius[atom.nb_idx-1] = atom.atom_type.rmin_14
-            inst.LJ_14_depth[atom.nb_idx-1] = atom.atom_type.epsilon_14
+            inst.LJ_radius[atom.nb_idx-1] = atom.rmin
+            inst.LJ_depth[atom.nb_idx-1] = atom.epsilon
+            inst.LJ_14_radius[atom.nb_idx-1] = atom.rmin_14
+            inst.LJ_14_depth[atom.nb_idx-1] = atom.epsilon_14
         inst._add_standard_flags()
         inst.pointers['NATOM'] = len(inst.atoms)
         inst.parm_data['POINTERS'][NATOM] = len(inst.atoms)
-        inst.box = copy.copy(struct.box)
+        inst.box = _copy.copy(struct.box)
         if struct.box is None:
             inst.parm_data['POINTERS'][IFBOX] = 0
             inst.pointers['IFBOX'] = 0
@@ -236,7 +262,7 @@ class ChamberParm(AmberParm):
         self.residues.prune()
         self.rediscover_molecules()
 
-        # Transfer information from the topology lists 
+        # Transfer information from the topology lists
         self._xfer_atom_info()
         self._xfer_residue_info()
         self._xfer_bond_info()
@@ -303,7 +329,7 @@ class ChamberParm(AmberParm):
     @property
     def chamber(self):
         return True
-   
+
     @property
     def amoeba(self):
         return False
@@ -338,6 +364,11 @@ class ChamberParm(AmberParm):
         del self.improper_types[:]
         for k, eq in zip(self.parm_data['CHARMM_IMPROPER_FORCE_CONSTANT'],
                          self.parm_data['CHARMM_IMPROPER_PHASE']):
+            # Previous versions of ParmEd stored improper phases as degrees,
+            # whereas it should really be stored in radians. So do a simple
+            # heuristic check to see if a conversion is necessary so we support
+            # all versions.
+            eq = eq * RAD_TO_DEG if abs(eq) <= 2*pi else eq
             self.improper_types.append(
                     ImproperType(k, eq, self.improper_types)
             )
@@ -347,6 +378,13 @@ class ChamberParm(AmberParm):
                     Improper(self.atoms[i-1], self.atoms[j-1], self.atoms[k-1],
                              self.atoms[l-1], self.improper_types[m-1])
             )
+        # Make sure that if we have a comment in the CHARMM impropers, we fix it
+        # to say the units are in radians
+        for i in range(len(self.parm_comments.get('CHARMM_IMPROPER_PHASE', []))):
+            comment = self.parm_comments['CHARMM_IMPROPER_PHASE'][i]
+            if 'degrees' in comment:
+                self.parm_comments['CHARMM_IMPROPER_PHASE'][i] = \
+                        comment.replace('degrees', 'radians')
 
     #===================================================
 
@@ -443,7 +481,7 @@ class ChamberParm(AmberParm):
         data['CHARMM_IMPROPER_FORCE_CONSTANT'] = \
                 [type.psi_k for type in self.improper_types]
         data['CHARMM_IMPROPER_PHASE'] = \
-                [type.psi_eq for type in self.improper_types]
+                [type.psi_eq*DEG_TO_RAD for type in self.improper_types]
         data['CHARMM_IMPROPERS'] = improper_array = []
         for imp in self.impropers:
             improper_array.extend([imp.atom1.idx+1, imp.atom2.idx+1,
@@ -567,7 +605,7 @@ class ChamberParm(AmberParm):
         self.add_flag('CHARMM_IMPROPER_FORCE_CONSTANT', '5E16.8', num_items=0,
                 comments=['K_psi: kcal/mole/rad**2'])
         self.add_flag('CHARMM_IMPROPER_PHASE', '5E16.8', num_items=0,
-                comments=['psi: degrees'])
+                comments=['psi: radians'])
         natyp = self.pointers['NATYP'] = self.parm_data['POINTERS'][NATYP] = 1
         self.add_flag('SOLTY', '5E16.8', num_items=natyp)
         self.add_flag('LENNARD_JONES_ACOEF', '3E24.16', num_items=0)
@@ -670,16 +708,16 @@ class ChamberParm(AmberParm):
         for i in range(len(data['LENNARD_JONES_14_ACOEF'])):
             data['LENNARD_JONES_14_ACOEF'][i] = None
             data['LENNARD_JONES_14_BCOEF'][i] = None
-        atom_types_assigned_unique_idx = set()
         ii = 0
+        replaced_atoms = set()
         while True:
             needed_split = False
             for pair in self.adjusts:
                 a1, a2 = pair.atom1, pair.atom2
                 i, j = sorted([a1.nb_idx - 1, a2.nb_idx - 1])
                 idx = data['NONBONDED_PARM_INDEX'][ntypes*i+j] - 1
-                eps = sqrt(a1.epsilon_14 * a2.epsilon_14)
-                rmin = a1.rmin_14 + a2.rmin_14
+                eps = pair.type.epsilon
+                rmin = pair.type.rmin
                 rmin6 = rmin * rmin * rmin * rmin * rmin * rmin
                 acoef = eps * rmin6*rmin6
                 bcoef = 2 * eps * rmin6
@@ -687,16 +725,15 @@ class ChamberParm(AmberParm):
                     if abs(data['LENNARD_JONES_14_ACOEF'][idx] - acoef) > SMALL:
                         # Need to split out another type
                         needed_split = True
-                        if a1.type in atom_types_assigned_unique_idx:
-                            if a2.type in atom_types_assigned_unique_idx:
-                                # Ugh. Split out this atom by itself
-                                mask = '@%d' % (a1.idx + 1)
-                            else:
-                                mask = '@%%%s' % a2.type
-                                atom_types_assigned_unique_idx.add(a2.type)
+                        assert (a1 not in replaced_atoms or
+                                a2 not in replaced_atoms)
+                        # Only add each atom as a new type ONCE
+                        if a1 in replaced_atoms:
+                            mask = '@%d' % (a2.idx+1)
+                            replaced_atoms.add(a2)
                         else:
-                            atom_types_assigned_unique_idx.add(a1.type)
-                            mask = '@%%%s' % a1.type
+                            mask = '@%d' % (a1.idx+1)
+                            replaced_atoms.add(a1)
                         addLJType(self, mask, radius_14=0,
                                   epsilon_14=0).execute()
                         ntypes += 1
@@ -715,9 +752,8 @@ class ChamberParm(AmberParm):
             if not needed_split:
                 break
             # The following should never happen
-            if ii > len(self.atoms):
-                raise RuntimeError("Could not resolve all exceptions. Some "
-                                   "unexpected problem with the algorithm")
+            assert ii <= len(self.atoms)+1, 'Could not resolve all exceptions. ' \
+                    'Some unexpected problem with the algorithm'
         # Now go through and change all None's to 0s, as these terms won't be
         # used for any exceptions, anyway
         for i, item in enumerate(data['LENNARD_JONES_14_ACOEF']):
@@ -728,8 +764,6 @@ class ChamberParm(AmberParm):
                 data['LENNARD_JONES_14_BCOEF'][i] = 0.0
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-charmm_solvent = ('WAT', 'TIP3', 'HOH', 'TIP4', 'TIP5', 'SPCE', 'SPC')
 
 def ConvertFromPSF(struct, params, title=''):
     """

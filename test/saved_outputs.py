@@ -1,3 +1,4 @@
+
 """
 This module simply contains a repository of saved outputs so it doesn't flood
 the actual test scripts
@@ -238,11 +239,13 @@ Nucleic Acid Residues: 0
 Number of cations:     10
 Number of anions:      10
 Num. of solvent mols:  696
-Num. of unknown atoms: 6
+Num. of unknown res:   6
 Total charge (e-):     -0.0000
 Total mass (amu):      13618.1680
 Number of atoms:       2174
 Number of residues:    725
+Residue set:           ACE, ALA, CYX, Cl-, NME, Na+, WAT
+Residue count:         ACE: 3, ALA: 1, CYX: 2, Cl-: 10, NME: 3, Na+: 10, WAT: 696
 System volume (ang^3): 26461.48
 System density (g/mL): 0.854596
 """
@@ -361,11 +364,17 @@ Nucleic Acid Residues: 0
 Number of cations:     0
 Number of anions:      0
 Num. of solvent mols:  17856
-Num. of unknown atoms: 5
+Num. of unknown res:   5
 Total charge (e-):     -11.0000
 Total mass (amu):      339672.2974
 Number of atoms:       56057
 Number of residues:    18015
+Residue set:           ALA, ARG, ASN, ASP, CYS, GLN, GLU
+                       GLY, HSD, ILE, LEU, LYS, MET, PHE
+                       PRO, SER, THR, TIP3, TRP, TYR, VAL
+Residue count:         ALA: 13, ARG: 9, ASN: 5, ASP: 14, CYS: 2, GLN: 4, GLU: 12
+                       GLY: 10, HSD: 5, ILE: 12, LEU: 11, LYS: 6, MET: 5, PHE: 6
+                       PRO: 10, SER: 9, THR: 6, TIP3: 17856, TRP: 5, TYR: 4, VAL: 11
 System volume (ang^3): 615109.34
 System density (g/mL): 0.916989
 """
@@ -427,11 +436,13 @@ Nucleic Acid Residues: 0
 Number of cations:     0
 Number of anions:      0
 Num. of solvent mols:  818
-Num. of unknown atoms: 2
+Num. of unknown res:   2
 Total charge (e-):     0.0000
 Total mass (amu):      14809.3650
 Number of atoms:       2466
 Number of residues:    820
+Residue set:           ACE, NME, WAT
+Residue count:         ACE: 1, NME: 1, WAT: 818
 System volume (ang^3): 1.00
 System density (g/mL): 24591.940605
 """
@@ -442,11 +453,13 @@ Nucleic Acid Residues: 0
 Number of cations:     0
 Number of anions:      0
 Num. of solvent mols:  818
-Num. of unknown atoms: 2
+Num. of unknown res:   2
 Total charge (e-):     0.0000
 Total mass (amu):      14809.3650
 Number of atoms:       2466
 Number of residues:    820
+Residue set:           ACE, NME, WAT
+Residue count:         ACE: 1, NME: 1, WAT: 818
 System volume (ang^3): 27031.52
 System density (g/mL): 0.909751
 """
@@ -505,4 +518,132 @@ PRINT_DIHEDRALS_4MASKS = """\
                Atom 1               Atom 2               Atom 3               Atom 4     Height  Periodic.      Phase  EEL Scale  VDW Scale
         7   CB (  CT)        5   CA (  CT)       12    C (   C)       14    N (   N)     0.0700     2.0000     0.0000     1.2000     2.0000
 M       7   CB (  CT)        5   CA (  CT)       12    C (   C)       14    N (   N)     0.1000     4.0000     0.0000     1.2000     2.0000
+"""
+
+PRINTLJMATRIX_MGNACL = """
+Atom Type 1 Atom Type 2   A coefficient   B coefficient   C coefficient      R i,j    Eps i,j
+----------------------------------------------------------------------------------------------
+   HC [1]  Mg2+ [8]     7354.219030       23.534357       35.617936   2.924000   0.018828
+CT,CX [2]  Mg2+ [8]    97526.006400      139.243106       97.650208   3.345000   0.049701
+    C [3]  Mg2+ [8]    86469.113200      123.456587      124.432687   3.345000   0.044066
+    O [4]  Mg2+ [8]    53861.861300      121.802066       52.368490   3.098200   0.068860
+    N [5]  Mg2+ [8]    89596.771500      149.010737      100.319252   3.261000   0.061956
+    H [6]  Mg2+ [8]       96.094933        2.690198       35.617936   2.037000   0.018828
+   H1 [7]  Mg2+ [8]     4843.780440       19.099689       35.617936   2.824000   0.018828
+ Mg2+ [8]  Mg2+ [8]     7170.637930       25.448794        4.417729   2.874000   0.022580
+ Mg2+ [8]   Na+ [9]     9783.484750       32.222975       22.962985   2.910000   0.026532
+ Mg2+ [8]  Cl- [10]   492351.740000      462.292889      296.473338   3.587000   0.108517
+ Mg2+ [8]   OW [11]    68897.634400      127.063907      132.900000   3.205300   0.058584
+ Mg2+ [8]   HW [12]        0.000000        0.000000        0.000000   0.000000   0.000000
+"""
+
+PRINTLJMATRIX_NACLMG = """
+Atom Type 1 Atom Type 2   A coefficient   B coefficient   C coefficient      R i,j    Eps i,j
+----------------------------------------------------------------------------------------------
+   HC [1] Mg2+ [10]     7354.219030       23.534357       35.617936   2.924000   0.018828
+CT,CX [2] Mg2+ [10]    97526.006400      139.243106       97.650208   3.345000   0.049701
+    C [3] Mg2+ [10]    86469.113200      123.456587      124.432687   3.345000   0.044066
+    O [4] Mg2+ [10]    53861.861300      121.802066       52.368490   3.098200   0.068860
+    N [5] Mg2+ [10]    89596.771500      149.010737      100.319252   3.261000   0.061956
+    H [6] Mg2+ [10]       96.094933        2.690198       35.617936   2.037000   0.018828
+   H1 [7] Mg2+ [10]     4843.780440       19.099689       35.617936   2.824000   0.018828
+  Na+ [8] Mg2+ [10]     9783.484750       32.222975       22.962985   2.910000   0.026532
+  Cl- [9] Mg2+ [10]   492351.740000      462.292889      296.473338   3.587000   0.108517
+Mg2+ [10] Mg2+ [10]     7170.637930       25.448794        4.417729   2.874000   0.022580
+Mg2+ [10]   OW [11]    68897.634400      127.063907      132.900000   3.205300   0.058584
+Mg2+ [10]   HW [12]        0.000000        0.000000        0.000000   0.000000   0.000000
+"""
+
+PDB_SUMMARY = """\
+Amino Acid Residues:   129
+Nucleic Acid Residues: 0
+Number of cations:     0
+Number of anions:      0
+Num. of solvent mols:  139
+Num. of unknown res:   6
+Total charge (e-):     0.0000
+Total mass (amu):      15942.3372
+Number of atoms:       1164
+Number of residues:    274
+Residue set:           ALA, ARG, ASN, ASP, CYS, GLN, GLU
+                       GLY, HIS, HOH, ILE, LEU, LYS, MET
+                       NO3, PHE, PRO, SER, THR, TRP, TYR
+                       VAL
+Residue count:         ALA: 12, ARG: 11, ASN: 14, ASP: 7, CYS: 8, GLN: 3, GLU: 2
+                       GLY: 12, HIS: 1, HOH: 139, ILE: 6, LEU: 8, LYS: 6, MET: 2
+                       NO3: 6, PHE: 3, PRO: 2, SER: 10, THR: 7, TRP: 6, TYR: 3
+                       VAL: 6
+System volume (ang^3): 25998.98
+System density (g/mL): 1.018244
+"""
+
+AMOEBA_SMALL_MDIN = """\
+Input file for AMOEBA simulations.
+ &cntrl
+     ! Add whatever variables you need here
+     ntb=1, ntt=1, ntp=0, ! PBC, thermostat, barostat
+     irest=0, ntx=1,      ! restart flags
+ /
+ &amoeba
+     ! Some basic potential parameters. For better
+     ! energy conservation you need to adjust these
+     ! defaults
+     beeman_integrator=1,   ! Use Beeman integrator
+     dipole_scf_tol=0.01,   ! 10e-6 gives good NVE
+
+     ! You should not generally modify these variables:
+     do_valence=1, do_bond=1, do_ureyb=1,
+     do_reg_angle=1, do_trig_angle=1, do_opbend=1,
+     do_torsion=1, do_pi_torsion=1, do_strbend=1,
+     do_torsion_torsion=0,
+ /
+"""
+
+AS4_TITR_OUTPUT = """\
+AS4 	pKa =   4.0
+    ATOM     STATE 0     STATE 1     STATE 2     STATE 3     STATE 4
+       N     -0.4157     -0.4157     -0.4157     -0.4157     -0.4157
+       H      0.2719      0.2719      0.2719      0.2719      0.2719
+      CA      0.0341      0.0341      0.0341      0.0341      0.0341
+      HA      0.0864      0.0864      0.0864      0.0864      0.0864
+      CB     -0.1783     -0.0316     -0.0316     -0.0316     -0.0316
+     HB2     -0.0122      0.0488      0.0488      0.0488      0.0488
+     HB3     -0.0122      0.0488      0.0488      0.0488      0.0488
+      CG      0.7994      0.6462      0.6462      0.6462      0.6462
+     OD1     -0.8014     -0.5554     -0.5554     -0.6376     -0.6376
+     OD2     -0.8014     -0.6376     -0.6376     -0.5554     -0.5554
+    HD21      0.0000      0.4747      0.0000      0.0000      0.0000
+       C      0.5973      0.5973      0.5973      0.5973      0.5973
+       O     -0.5679     -0.5679     -0.5679     -0.5679     -0.5679
+    HD22      0.0000      0.0000      0.4747      0.0000      0.0000
+    HD11      0.0000      0.0000      0.0000      0.4747      0.0000
+    HD12      0.0000      0.0000      0.0000      0.0000      0.4747
+--------------------------------------------------------------------
+Prot Cnt           0           1           1           1           1
+--------------------------------------------------------------------
+Reference Energies (ES = Explicit solvent, IS = Implicit solvent)
+
+igb=1 IS     0.00000    26.92837    26.92837    26.92837    26.92837
+igb=2 IS     0.00000    32.38803    32.38803    32.38803    32.38803
+igb=5 IS     0.00000    32.09662    32.09662    32.09662    32.09662
+igb=7 IS     0.00000    28.91668    28.91668    28.91668    28.91668
+igb=8 IS     0.00000    31.84346    31.84346    31.84346    31.84346
+igb=1 IS     0.00000    26.92837    26.92837    26.92837    26.92837
+igb=2 ES     0.00000    38.75988    38.75988    38.75988    38.75988
+igb=5 ES     0.00000    32.09662    32.09662    32.09662    32.09662
+igb=7 IS     0.00000    28.91668    28.91668    28.91668    28.91668
+igb=8 ES     0.00000    31.84346    31.84346    31.84346    31.84346
+--------------------------------------------------------------------
+Reference Energies for Internal Dielectric of 2.0
+
+igb=1 IS     0.00000     Not Set     Not Set     Not Set     Not Set
+igb=2 IS     0.00000    18.17548    18.17548    18.17548    18.17548
+igb=5 IS     0.00000    18.58349    18.58349    18.58349    18.58349
+igb=7 IS     0.00000     Not Set     Not Set     Not Set     Not Set
+igb=8 IS     0.00000     Not Set     Not Set     Not Set     Not Set
+igb=1 IS     0.00000     Not Set     Not Set     Not Set     Not Set
+igb=2 ES     0.00000    18.17548    18.17548    18.17548    18.17548
+igb=5 ES     0.00000    18.58349    18.58349    18.58349    18.58349
+igb=7 IS     0.00000     Not Set     Not Set     Not Set     Not Set
+igb=8 ES     0.00000     Not Set     Not Set     Not Set     Not Set
 """

@@ -1,10 +1,8 @@
 """
 This module contains classes for reading and writing Amber NetCDF-style files,
-including both restarts and trajectories. These sets of classes abstract the
-interaction with the various NetCDF-Python APIs that are available, namely
-    -  scipy
-    -  netCDF4
-    -  ScientificPython
+including both restarts and trajectories. The NetCDF engine used here is pulled
+from the scipy distribution, and depends *only* on numpy. It is available
+through parmed.utils.netcdf.
 
 This module contains objects relevant to Amber NetCDF files. The use() function
 is responsible for selecting the API based on a default choice or user-selection
@@ -15,168 +13,20 @@ contained in this module.
 """
 from __future__ import division, print_function, absolute_import
 
-from parmed.formats.registry import FileFormatType
-from parmed import unit as u
-from parmed.utils.six import wraps, add_metaclass
-import warnings
-# This determines which NetCDF package we're going to use...
-NETCDF_PACKAGE = None
-
-ALLOWED_NETCDF_PACKAGES = ('netCDF4', 'Scientific', 'scipy')
-
-NETCDF_INITIALIZED = False
-SELECTED_NETCDF = ''
-
-_FMT = 'NETCDF3_64BIT'
-
-open_netcdf = get_int_dimension = get_float = None
-
 try:
-    from netCDF4 import Dataset as nc4NetCDFFile
-    nc4open_netcdf = lambda name, mode: nc4NetCDFFile(name, mode, format=_FMT)
-    nc4get_int_dimension = lambda obj, name: len(obj.dimensions[name])
-    # Support 1-dimension arrays as scalars (since that's how Python-NetCDF
-    # bindings write out scalars in Amber files)
-    def nc4get_float(obj, name):
-        try:
-            val = obj.variables[name].getValue()
-            if hasattr(val, '__iter__'):
-                return val[0]
-            return val
-        except IndexError:
-            return obj.variables[name][0]
-        raise RuntimeError('Should not be here')
-    _HAS_NC4 = True
+    # netCDF4 is *much* faster to write NetCDF files, and can make a huge
+    # difference when using it as an OpenMM reporter. So do what we can to use
+    # the faster library when available
+    import netCDF4 as nc
 except ImportError:
-    nc4open_netcdf = nc4get_int_dimension = nc4get_float = None
-    _HAS_NC4 = False
-
-try:
-    from Scientific.IO.NetCDF import NetCDFFile as sciNetCDFFile
-    sciopen_netcdf = lambda name, mode: sciNetCDFFile(name, mode)
-    sciget_int_dimension = lambda obj, name: obj.dimensions[name]
-    sciget_float = lambda obj, name: obj.variables[name].getValue()
-    _HAS_SCIENTIFIC_PYTHON = True
-except ImportError:
-    sciopen_netcdf = sciget_int_dimension = sciget_float = None
-    _HAS_SCIENTIFIC_PYTHON = False
-
-try:
-    from scipy.io.netcdf import netcdf_file as spNetCDFFile
-    spopen_netcdf = lambda name, mode: \
-            spNetCDFFile(name, mode, mmap=False, version=2)
-    spget_int_dimension = lambda obj, name: obj.dimensions[name]
-    spget_float = lambda obj, name: obj.variables[name].getValue()
-    _HAS_SCIPY_NETCDF = True
-except ImportError:
-    spopen_netcdf = spget_int_dimension = spget_float = None
-    _HAS_SCIPY_NETCDF = False
-
-HAS_NETCDF = (_HAS_NC4 or _HAS_SCIENTIFIC_PYTHON or _HAS_SCIPY_NETCDF)
-
-def _coerce_to_string(string, encoding='ascii'):
-    """
-    Decodes input to a string with the specified encoding if it is a bytes
-    object. Otherwise, it just returns the input string.
-    """
-    try:
-        return string.decode(encoding)
-    except AttributeError:
-        # Assume string
-        return string
-
-def use(package=None):
-    """
-    Selects the NetCDF package to use
-
-    Parameters
-    ----------
-    package : str
-        This specifies which package to use, and may be either scipy, netCDF4,
-        Scientific/ScientificPython, or None.  If None, it chooses the
-        first available implementation from the above list (in that order).
-
-    Notes
-    -----
-    The 'netcdffiles' module calls this function to get the default NetCDF
-    implementation if none has been selected before, so calling this function is
-    unnecessary if the default implementation is sufficient. This is mostly
-    useful for development testing as the backend NetCDF choice is virtually
-    invisible to the user.
-
-    The NetCDF files have been tested against netCDF v. 1.0.4, Scientific
-    v. 2.9.1, and scipy v. 0.13.1. Later versions are expected to work barring
-    backwards-incompatible changes. Other versions are expected to work barring
-    bugs or backwards-incompatible changes in the current or earlier versions.
-    """
-    global open_netcdf, get_int_dimension, get_float, NETCDF_INITIALIZED
-    global HAS_NETCDF, SELECTED_NETCDF, nc4open_netcdf, nc4get_int_dimension
-    global nc4get_float, sciopen_netcdf, sciget_int_dimension, sciget_float
-    global pynopen_netcdf, pynget_int, pynget_float, ALLOWED_NETCDF_PACKAGES
-    global _HAS_NC4, _HAS_SCIENTIFIC_PYTHON, _HAS_SCIPY_NETCDF
-
-    if package is None:
-        if NETCDF_INITIALIZED:
-            return
-        if _HAS_SCIPY_NETCDF:
-            open_netcdf = spopen_netcdf
-            get_int_dimension = spget_int_dimension
-            get_float = spget_float
-            SELECTED_NETCDF = 'scipy'
-        elif _HAS_NC4:
-            open_netcdf = nc4open_netcdf
-            get_int_dimension = nc4get_int_dimension
-            get_float = nc4get_float
-            SELECTED_NETCDF = 'netCDF4'
-        elif _HAS_SCIENTIFIC_PYTHON:
-            open_netcdf = sciopen_netcdf
-            get_int_dimension = sciget_int_dimension
-            get_float = sciget_float
-            SELECTED_NETCDF = 'ScientificPython'
-    elif package == 'netCDF4':
-        if not _HAS_NC4:
-            raise ImportError('Could not find netCDF4 package')
-        open_netcdf = nc4open_netcdf
-        get_int_dimension = nc4get_int_dimension
-        get_float = nc4get_float
-        SELECTED_NETCDF = 'netCDF4'
-    elif package == 'Scientific' or package == 'ScientificPython':
-        if not _HAS_SCIENTIFIC_PYTHON:
-            raise ImportError('Could not find package ScientificPython')
-        open_netcdf = sciopen_netcdf
-        get_int_dimension = sciget_int_dimension
-        get_float = sciget_float
-        SELECTED_NETCDF = 'ScientificPython'
-    elif package == 'scipy':
-        if not _HAS_SCIPY_NETCDF:
-            raise ImportError('Could not find scipy NetCDF package')
-        open_netcdf = spopen_netcdf
-        get_int_dimension = spget_int_dimension
-        get_float = spget_float
-    else:
-        raise ImportError('%s not a valid NetCDF package. Available options '
-                          'are %s' % (package, 
-                                      ', '.join(ALLOWED_NETCDF_PACKAGES))
-        )
-    
-    NETCDF_INITIALIZED = True # We have now selected a NetCDF implementation
-
+    nc = None
 import numpy as np
 from parmed import __version__
-
-def needs_netcdf(fcn):
-    """
-    Decorator to protect against functions that need NetCDF so we can provide
-    a helpful error message
-    """
-    @wraps(fcn)
-    def new_fcn(*args, **kwargs):
-        if not HAS_NETCDF:
-            raise ImportError('No NetCDF packages are available!')
-        if not NETCDF_INITIALIZED:
-            use() # Set up a default NetCDF implementation
-        return fcn(*args, **kwargs)
-    return new_fcn
+from parmed.formats.registry import FileFormatType
+from parmed import unit as u
+from parmed.utils.netcdf import netcdf_file as NetCDFFile
+from parmed.utils.six import add_metaclass
+import warnings
 
 @add_metaclass(FileFormatType)
 class NetCDFRestart(object):
@@ -203,17 +53,13 @@ class NetCDFRestart(object):
         if filename.startswith('http://') or filename.startswith('https://')\
                 or filename.startswith('ftp://'):
             return False
-        if not HAS_NETCDF:
-            return False # Can't determine...
-        if not NETCDF_INITIALIZED:
-            use()
         try:
-            f = open_netcdf(filename, 'r')
-        except: # Bare except... each package raises different exceptions
+            f = NetCDFFile(filename, 'r', mmap=False)
+        except (TypeError, OSError):
             return False
         try:
             try:
-                if _coerce_to_string(f.Conventions) != 'AMBERRESTART':
+                if f.Conventions.decode() != 'AMBERRESTART':
                     return False
             except AttributeError:
                 return False
@@ -222,7 +68,6 @@ class NetCDFRestart(object):
         finally:
             f.close()
 
-    @needs_netcdf
     def __init__(self, fname, mode='r'):
         """
         Opens a NetCDF File. The main constructor should never be called
@@ -231,13 +76,18 @@ class NetCDFRestart(object):
         respectively.
         """
         self.closed = False
-        self._ncfile = open_netcdf(fname, mode)
-   
+        if mode.startswith('w') and nc is not None:
+            self._ncfile = nc.Dataset(fname, mode, format='NETCDF3_64BIT')
+        else:
+            if mode.startswith('w'):
+                warnings.warn('Could not find netCDF4 module. Falling back on '
+                              'scipy implementation, which can significantly '
+                              'slow down simulations if used as a reporter')
+            self._ncfile = NetCDFFile(fname, mode, mmap=False)
+
     @classmethod
-    @needs_netcdf
     def open_new(cls, fname, natom, box, vels, title='',
-                 remd=None, temp=None, remd_indices=None,
-                 remd_groups=None, remd_dimtypes=None):
+                 remd=None, temp=None, remd_dimtypes=None):
         """
         Opens a new NetCDF file and sets the attributes
 
@@ -256,7 +106,7 @@ class NetCDFRestart(object):
         remd : str=None
             None -- No REMD information is written
             'T[emperature]' -- target temperature (or pH) will be written
-            'M[ulti-D]' -- remd_indices and remd_groups will be written
+            'M[ulti-D]' -- remd_dimtypes will be written
         remd_dimtypes : iterable of int=None
             Array of exchange types for each group. The length will be the REMD
             dimension (if `remd` above is "M[ulti-D]")
@@ -273,12 +123,16 @@ class NetCDFRestart(object):
                                      'T-REMD restarts.')
             elif remd[0] in 'mM':
                 remd_type = 'MULTI'
-                if (remd_indices is None or remd_groups is None or 
-                    len(remd_indices) != len(remd_groups)):
-                    raise ValueError('remd_indices and remd_groups must be '
-                                     'given for multi-D REMD, and must have '
-                                     'the same length.')
-                remd_dimension = len(remd_indices)
+                if remd_dimtypes is None:
+                    raise ValueError('remd_dimtypes must be given for multi-D '
+                                     'REMD, and must have the same length.')
+                for dt in remd_dimtypes:
+                    if dt not in (1, 3):
+                        raise ValueError(
+                                'remd_dimtypes only supports dimension types '
+                                '1 and 3 currently'
+                        )
+                remd_dimension = len(remd_dimtypes)
             else:
                 raise ValueError('remd must be None, T[emperature] or M[ulti]')
         else:
@@ -290,8 +144,8 @@ class NetCDFRestart(object):
         # Assign the main attributes
         ncfile.Conventions = 'AMBERRESTART'
         ncfile.ConventionVersion = "1.0"
-        ncfile.title = title
-        ncfile.application = "AMBER"
+        ncfile.title = str(title) # Cast to avoid ScientificPython segfault
+        ncfile.application = "AmberTools"
         ncfile.program = "ParmEd"
         ncfile.programVersion = str(__version__)
         # Make all of the dimensions
@@ -337,31 +191,26 @@ class NetCDFRestart(object):
         if inst.hasvels:
             v = ncfile.createVariable('velocities', 'd',
                                             ('atom', 'spatial'))
-            try:
-                # Prevent NetCDF4 from trying to autoscale the values. Ugh.
-                v.set_auto_maskandscale(False)
-            except AttributeError:
-                # Other packages do not have this variable.
-                pass
             v.units = 'angstrom/picosecond'
             v.scale_factor = np.float32(20.455)
             inst.velocity_scale = 20.455
+            if nc is not None:
+                v.set_auto_maskandscale(False)
 
         if remd_type == 'TEMPERATURE':
             v = ncfile.createVariable('temp0', 'd', ('time',))
             v.units = 'kelvin'
+            v[0] = temp
         elif remd_type == 'MULTI':
             ncfile.createVariable('remd_indices', 'i',
                                         ('remd_dimension',))
-            ncfile.createVariable('remd_groups', 'i',
+            v = ncfile.createVariable('remd_dimtype', 'i',
                                         ('remd_dimension',))
-            ncfile.createVariable('remd_dimtype', 'i',
-                                        ('remd_dimension',))
+            v[:] = remd_dimtypes
 
         return inst
 
     @classmethod
-    @needs_netcdf
     def open_old(cls, fname):
         """
         Opens the NetCDF file and sets the global attributes that the file sets
@@ -373,29 +222,29 @@ class NetCDFRestart(object):
         """
         inst = cls(fname, 'r')
         ncfile = inst._ncfile
-        inst.Conventions = _coerce_to_string(ncfile.Conventions)
-        inst.ConventionVersion = _coerce_to_string(ncfile.ConventionVersion)
-        inst.application = _coerce_to_string(ncfile.application)
-        inst.program = _coerce_to_string(ncfile.program)
-        inst.programVersion = _coerce_to_string(ncfile.programVersion)
-        inst.title = _coerce_to_string(ncfile.title)
+        inst.Conventions = ncfile.Conventions.decode()
+        inst.ConventionVersion = ncfile.ConventionVersion.decode()
+        inst.program = ncfile.program.decode()
+        inst.programVersion = ncfile.programVersion.decode()
+        if hasattr(ncfile, 'application'):
+            inst.application = ncfile.application.decode()
+        else:
+            inst.application = None
+        if hasattr(ncfile, 'title'):
+            inst.title = ncfile.title.decode()
+        else:
+            inst.title = None
         # Set up the dimensions as attributes
         for dim in ncfile.dimensions:
             # Exception for ParmEd-created ncrst files
             if dim == 'time': continue
-            setattr(inst, dim, get_int_dimension(ncfile, dim))
+            setattr(inst, dim, ncfile.dimensions[dim])
         inst.hasvels = 'velocities' in ncfile.variables
         inst.hasbox = ('cell_lengths' in ncfile.variables and
                        'cell_angles' in ncfile.variables)
         if inst.hasvels:
             vels = ncfile.variables['velocities']
             inst.velocity_scale = vels.scale_factor
-            # Turn off automatic scaling for netCDF4. Ugh.
-            try:
-                vels.set_auto_maskandscale(False)
-            except AttributeError:
-                # Other packages do not have this variable
-                pass
         return inst
 
     parse = open_old
@@ -425,7 +274,7 @@ class NetCDFRestart(object):
     @property
     def cell_lengths(self):
         return self._ncfile.variables['cell_lengths'][:]
-   
+
     @cell_lengths.setter
     def cell_lengths(self, stuff):
         self._ncfile.variables['cell_lengths'][:] = np.asarray(stuff)
@@ -434,7 +283,7 @@ class NetCDFRestart(object):
     @property
     def cell_angles(self):
         return self._ncfile.variables['cell_angles'][:]
-   
+
     @cell_angles.setter
     def cell_angles(self, stuff):
         self._ncfile.variables['cell_angles'][:] = np.asarray(stuff)
@@ -452,7 +301,7 @@ class NetCDFRestart(object):
 
     @property
     def time(self):
-        return get_float(self._ncfile, 'time')
+        return self._ncfile.variables['time'].getValue()
 
     @time.setter
     def time(self, stuff):
@@ -461,13 +310,8 @@ class NetCDFRestart(object):
 
     @property
     def temp0(self):
-        return get_float(self._ncfile, 'temp0')
+        return self._ncfile.variables['temp0'].getValue()
 
-    @temp0.setter
-    def temp0(self, stuff):
-        self._ncfile.variables['temp0'][0] = float(stuff)
-        self.flush()
-   
     @property
     def remd_indices(self):
         return self._ncfile.variables['remd_indices'][:]
@@ -478,35 +322,21 @@ class NetCDFRestart(object):
         self.flush()
 
     @property
-    def remd_groups(self):
-        return self._ncfile.variables['remd_groups'][:]
-
-    @remd_groups.setter
-    def remd_groups(self, stuff):
-        self._ncfile.variables['remd_groups'][:] = np.asarray(stuff, dtype='i')
-        self.flush()
-
-    @property
     def remd_dimtype(self):
         return self._ncfile.variables['remd_dimtype'][:]
 
-    @remd_dimtype.setter
-    def remd_dimtype(self, stuff):
-        self._ncfile.variables['remd_dimtype'][:] = np.asarray(stuff, dtype='i')
-        self.flush()
-
     def close(self):
-        self.closed = True
-        self._ncfile.close()
+        if not self.closed:
+            self.closed = True
+            self._ncfile.close()
 
     def __del__(self):
         self.closed or (hasattr(self, '_ncfile') and self._ncfile.close())
 
     def flush(self):
-        try:
+        if nc is None:
+            # netCDF4.Dataset does not have a flush method
             self._ncfile.flush()
-        except AttributeError:
-            pass
 
 @add_metaclass(FileFormatType)
 class NetCDFTraj(object):
@@ -548,17 +378,13 @@ class NetCDFTraj(object):
         if filename.startswith('http://') or filename.startswith('https://')\
                 or filename.startswith('ftp://'):
             return False
-        if not HAS_NETCDF:
-            return False # Can't determine...
-        if not NETCDF_INITIALIZED:
-            use()
         try:
-            f = open_netcdf(filename, 'r')
-        except: # Bare except... each package raises different exceptions
+            f = NetCDFFile(filename, 'r', mmap=False)
+        except (TypeError, OSError):
             return False
         try:
             try:
-                if _coerce_to_string(f.Conventions) != 'AMBER':
+                if f.Conventions.decode() != 'AMBER':
                     return False
             except AttributeError:
                 return False
@@ -567,14 +393,19 @@ class NetCDFTraj(object):
         finally:
             f.close()
 
-    @needs_netcdf
     def __init__(self, fname, mode='r'):
         """ Opens a NetCDF File """
         self.closed = False
-        self._ncfile = open_netcdf(fname, mode)
-   
+        if mode.startswith('w') and nc is not None:
+            self._ncfile = nc.Dataset(fname, mode, format='NETCDF3_64BIT')
+        else:
+            if mode.startswith('w'):
+                warnings.warn('Could not find netCDF4 module. Falling back on '
+                              'scipy implementation, which can significantly '
+                              'slow down simulations if used as a reporter')
+            self._ncfile = NetCDFFile(fname, mode, mmap=False)
+
     @classmethod
-    @needs_netcdf
     def open_new(cls, fname, natom, box, crds=True, vels=False, frcs=False,
                  remd=None, remd_dimension=None, title=''):
         """
@@ -670,12 +501,8 @@ class NetCDFTraj(object):
             v.units = 'angstrom/picosecond'
             inst.velocity_scale = v.scale_factor = 20.455
             inst._last_vel_frame = 0
-            try:
-                # Prevent NetCDF4 from trying to autoscale the values. Ugh.
+            if nc is not None:
                 v.set_auto_maskandscale(False)
-            except AttributeError:
-                # Other packages do not have this variable.
-                pass
         if inst.hasfrcs:
             v = ncfile.createVariable('forces', 'f',
                                             ('frame', 'atom', 'spatial'))
@@ -699,13 +526,12 @@ class NetCDFTraj(object):
             ncfile.createVariable('remd_dimtype', 'i',
                                         ('remd_dimension',))
             inst._last_remd_frame = 0
-    
+
         inst._last_time_frame = 0
 
         return inst
 
     @classmethod
-    @needs_netcdf
     def open_old(cls, fname):
         """
         Opens the NetCDF file and sets the global attributes that the file sets
@@ -717,15 +543,21 @@ class NetCDFTraj(object):
         """
         inst = cls(fname, 'r')
         ncfile = inst._ncfile
-        inst.Conventions = _coerce_to_string(ncfile.Conventions)
-        inst.ConventionVersion = _coerce_to_string(ncfile.ConventionVersion)
-        inst.application = _coerce_to_string(ncfile.application)
-        inst.program = _coerce_to_string(ncfile.program)
-        inst.programVersion = _coerce_to_string(ncfile.programVersion)
-        inst.title = _coerce_to_string(ncfile.title)
+        inst.Conventions = ncfile.Conventions.decode()
+        inst.ConventionVersion = ncfile.ConventionVersion.decode()
+        inst.program = ncfile.program.decode()
+        inst.programVersion = ncfile.programVersion.decode()
+        if hasattr(ncfile, 'application'):
+            inst.application = ncfile.application.decode()
+        else:
+            inst.application = None
+        if hasattr(ncfile, 'title'):
+            inst.title = ncfile.title.decode()
+        else:
+            inst.title = None
         # Set up the dimensions as attributes
         for dim in ncfile.dimensions:
-            setattr(inst, dim, get_int_dimension(ncfile, dim))
+            setattr(inst, dim, ncfile.dimensions[dim])
         inst.hascrds = 'coordinates' in ncfile.variables
         inst.hasvels = 'velocities' in ncfile.variables
         inst.hasfrcs = 'forces' in ncfile.variables
@@ -738,12 +570,6 @@ class NetCDFTraj(object):
                 scale = ncfile.variables['velocities'].scale_factor
             except AttributeError:
                 scale = 1
-            try:
-                # Prevent NetCDF4 from trying to autoscale the values. Ugh.
-                ncfile.variables['velocities'].set_auto_maskandscale(False)
-            except AttributeError:
-                # Other packages do not have this variable.
-                pass
             inst._velocities = np.array(ncfile.variables['velocities'][:])*scale
             inst.velocity_scale = scale
         if inst.hasfrcs:
@@ -779,7 +605,7 @@ class NetCDFTraj(object):
         """
         if u.is_quantity(stuff):
             stuff = stuff.value_in_unit(u.angstroms)
-        stuff = np.asarray(stuff)
+        stuff = np.asarray(stuff, dtype='f')
         self._ncfile.variables['coordinates'][self._last_crd_frame] = \
                 np.reshape(stuff, (self.atom, 3))
         self._last_crd_frame += 1
@@ -838,8 +664,11 @@ class NetCDFTraj(object):
 
     @property
     def cell_lengths_angles(self):
-        return np.hstack((self._ncfile.variables['cell_lengths'][:],
-                          self._ncfile.variables['cell_angles'][:]))
+        try:
+            return np.hstack((self._ncfile.variables['cell_lengths'][:],
+                              self._ncfile.variables['cell_angles'][:]))
+        except KeyError:
+            return None
 
     box = cell_lengths_angles
 
@@ -917,7 +746,7 @@ class NetCDFTraj(object):
 
     @property
     def temp0(self):
-        return self._ncfile.variables['temp0']
+        return self._ncfile.variables['temp0'][:]
 
     def add_temp0(self, stuff):
         """ The temperature to add to the current frame of the NetCDF file
@@ -943,14 +772,14 @@ class NetCDFTraj(object):
 
     def close(self):
         """ Closes the NetCDF file """
-        self._ncfile.close()
-        self.closed = True
+        if not self.closed:
+            self._ncfile.close()
+            self.closed = True
 
     def __del__(self):
         self.closed or (hasattr(self, '_ncfile') and self._ncfile.close())
 
     def flush(self):
-        try:
+        if nc is None:
+            # netCDF4.Dataset does not have a flush method
             self._ncfile.flush()
-        except AttributeError:
-            pass

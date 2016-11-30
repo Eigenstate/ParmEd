@@ -10,7 +10,7 @@ from parmed.constants import (NATOM, NTYPES, NBONH, NTHETH, NPHIH,
 from parmed.exceptions import AmberError
 from parmed.formats.registry import FileFormatType
 from parmed.utils.io import genopen
-from parmed.utils.six import wraps, string_types, add_metaclass
+from parmed.utils.six import string_types, add_metaclass
 from parmed.utils.six.moves import range
 from contextlib import closing
 from copy import copy
@@ -18,19 +18,6 @@ import datetime
 from parmed.utils.fortranformat import FortranRecordReader, FortranRecordWriter
 from math import ceil
 import re
-from warnings import warn, filterwarnings
-
-filterwarnings('always', message='.', category=DeprecationWarning)
-
-def _deprecated(oldname, newname):
-    def wrapper(func):
-        @wraps(func)
-        def new_func(self, *args, **kwargs):
-            warn('%s has been deprecated and will be removed in the future, '
-                 'use %s instead' % (oldname, newname), DeprecationWarning)
-            return func(self, *args, **kwargs)
-        return new_func
-    return wrapper
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -189,7 +176,7 @@ class FortranFormat(object):
             if i % self.nitems != mod:
                 dest.write('\n')
         else:
-            dest.write(self.fmt % item)
+            dest.write(self.fmt % items)
             dest.write('\n')
 
     #===================================================
@@ -205,7 +192,7 @@ class FortranFormat(object):
             if i % self.nitems != mod:
                 dest.write('\n')
         else:
-            dest.write((self.fmt % item).ljust(self.itemlen))
+            dest.write((self.fmt % items).ljust(self.itemlen))
             dest.write('\n')
 
     #===================================================
@@ -249,6 +236,25 @@ class FortranFormat(object):
 
     def _write_ffwriter(self, items, dest):
         dest.write('%s\n' % self._writer.write(items))
+
+    #===================================================
+
+    def __eq__(self, other):
+        return (self.format == other.format and
+                self.strip_strings == other.strip_strings)
+
+    #===================================================
+
+    def __hash__(self):
+        return hash((self.format, self.strip_strings))
+
+    #===================================================
+
+    def __getstate__(self):
+        return dict(format=self.format, strip_strings=self.strip_strings)
+
+    def __setstate__(self, d):
+        self.__init__(d['format'], d['strip_strings'])
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -341,11 +347,14 @@ class AmberFormat(object):
         in the prmtop file contains (i.e., either an AmberParm, ChamberParm,
         AmoebaParm, or AmberFormat)
         """
-        from parmed.amber import LoadParm
+        from parmed.amber import LoadParm, BeemanRestart
         try:
             return LoadParm(filename, *args, **kwargs)
-        except IndexError:
-            return AmberFormat(filename, *args, **kwargs)
+        except (IndexError, KeyError):
+            parm = AmberFormat(filename, *args, **kwargs)
+            if 'ATOMIC_COORDS_LIST' in parm.parm_data:
+                return BeemanRestart.from_rawdata(parm)
+            return parm
 
     #===================================================
 
@@ -479,9 +488,10 @@ class AmberFormat(object):
 
         current_flag = ''
         fmtre = re.compile(r'%FORMAT *\((.+)\)')
+        version = None
 
         # Open up the file and read the data into memory
-        with closing(genopen(self.name, 'r')) as prm:
+        with closing(genopen(fname, 'r')) as prm:
             for line in prm:
                 if line[0] == '%':
                     if line[0:8] == '%VERSION':
@@ -504,7 +514,12 @@ class AmberFormat(object):
                             fmt.read = fmt._read_nostrip
                         self.formats[current_flag] = fmt
                         continue
-                self.parm_data[current_flag].extend(fmt.read(line))
+                try:
+                    self.parm_data[current_flag].extend(fmt.read(line))
+                except KeyError:
+                    if version is not None:
+                        raise
+                    break # Skip out of the loop down to the old-format parser
 
         # convert charges to fraction-electrons
         if 'CTITLE' in self.parm_data:
@@ -583,7 +598,7 @@ class AmberFormat(object):
                 except ValueError:
                     raise ValueError(
                             'Error parsing line %d, token %d [%s]: Problem '
-                            'during floating point  read.' % (line_idx, idx,
+                            'during floating point read.' % (line_idx, idx,
                             lines[line_idx][idx*16:idx*16+16])
                     )
                 i += 1
@@ -827,35 +842,6 @@ class AmberFormat(object):
             else:
                 CHARGE_SCALE = AMBER_ELECTROSTATIC
 
-<<<<<<< HEAD:chemistry/amber/amberformat.py
-        if self.charge_flag in self.parm_data.keys():
-            for i in xrange(len(self.parm_data[self.charge_flag])):
-                self.parm_data[self.charge_flag][i] *= CHARGE_SCALE
-
-        # write version to top of prmtop file
-        new_prm.write('%s\n' % self.version)
-
-        # then write pointers
-        self.flag_list.remove('POINTERS')
-        if 'TITLE' in self.flag_list:
-          self.flag_list.insert(self.flag_list.index('TITLE')+1, 'POINTERS')
-        else:
-          self.flag_list.insert(self.flag_list.index('CTITLE')+1, 'POINTERS')
-
-        # write data to prmtop file, inserting blank line if it's an empty field
-        for flag in self.flag_list:
-            new_prm.write('%%FLAG %s\n' % flag)
-            # Insert any comments before the %FORMAT specifier
-            # except VMD hates comments
-            if self.vmd_compat is None:
-              for comment in self.parm_comments[flag]:
-                  new_prm.write('%%COMMENT %s\n' % comment)
-            new_prm.write('%%FORMAT(%s)\n' % self.formats[flag])
-            if len(self.parm_data[flag]) == 0: # empty field...
-                new_prm.write('\n')
-                continue
-            self.formats[flag].write(self.parm_data[flag], new_prm)
-=======
             if self.charge_flag in self.parm_data.keys():
                 for i in range(len(self.parm_data[self.charge_flag])):
                     self.parm_data[self.charge_flag][i] *= CHARGE_SCALE
@@ -873,7 +859,6 @@ class AmberFormat(object):
                     new_prm.write('\n')
                     continue
                 self.formats[flag].write(self.parm_data[flag], new_prm)
->>>>>>> 1b0e74b97dd890ba8be3e644f84ce0239c8ed34e:parmed/amber/amberformat.py
 
         new_prm.close() # close new prmtop
 
@@ -910,6 +895,11 @@ class AmberFormat(object):
             If provided, the added flag will be added after the one with the
             name given to `after`. If this flag does not exist, IndexError will
             be raised
+
+        Raises
+        ------
+        AmberError if flag already exists
+        IndexError if the ``after`` flag does not exist
         """
         if flag_name in self.parm_data:
             raise AmberError('%s already exists' % (flag_name))
@@ -920,9 +910,10 @@ class AmberFormat(object):
             # If the 'after' flag is the last one, just append
             if self.flag_list[-1] == after:
                 self.flag_list.append(flag_name.upper())
-            # Otherwise find the index and add it after
-            idx = self.flag_list.index(after) + 1
-            self.flag_list.insert(idx, flag_name.upper())
+            else:
+                # Otherwise find the index and add it after
+                idx = self.flag_list.index(after) + 1
+                self.flag_list.insert(idx, flag_name.upper())
         else:
             self.flag_list.append(flag_name.upper())
         self.formats[flag_name.upper()] = FortranFormat(flag_format)
@@ -947,20 +938,22 @@ class AmberFormat(object):
     def delete_flag(self, flag_name):
         """ Removes a flag from the topology file """
         flag_name = flag_name.upper()
-        if not flag_name in self.flag_list:
-            return # already gone
-        del self.flag_list[self.flag_list.index(flag_name)]
-        del self.parm_comments[flag_name]
-        del self.formats[flag_name]
-        del self.parm_data[flag_name]
+        if flag_name in self.flag_list:
+            del self.flag_list[self.flag_list.index(flag_name)]
+        if flag_name in self.parm_comments:
+            del self.parm_comments[flag_name]
+        if flag_name in self.formats:
+            del self.formats[flag_name]
+        if flag_name in self.parm_data:
+            del self.parm_data[flag_name]
 
     #===================================================
 
-    # For backwards-compatibility, but warn of deprecation
+    def __getstate__(self):
+        return dict(parm_data=self.parm_data, flag_list=self.flag_list,
+                    formats=self.formats, parm_comments=self.parm_comments,
+                    charge_flag=self.charge_flag, version=self.version,
+                    name=self.name)
 
-    addFlag = _deprecated('addFlag', 'add_flag')(add_flag)
-    deleteFlag = _deprecated('deleteFlag', 'delete_flag')(delete_flag)
-
-    @_deprecated('writeParm', 'write_parm')
-    def writeParm(self, name):
-        return self.write_parm(name)
+    def __setstate__(self, d):
+        self.__dict__ = d

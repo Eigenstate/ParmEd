@@ -1,7 +1,27 @@
 """ Exceptions used in parmed script """
+__all__ = ['ParmedError', 'ParmedWarning', 'InputError', 'ParmError',
+           'ParmWarning', 'SeriousParmWarning', 'ChangeRadiiError',
+           'WriteOFFError', 'ParmedUtilsError', 'ParmedChangeError',
+           'ParmedAddLJTypeError', 'ChangeLJPairError', 'LJ_TypeError',
+           'ParmedMoleculeError', 'CoarseGrainError', 'ChangeStateError',
+           'DeleteDihedralError', 'ArgumentError', 'NoArgument',
+           'InterpreterError', 'AmberIncompatibleWarning', 'BadParmWarning',
+           'FixableParmWarning', 'NonfatalWarning', 'NonUniversalWarning',
+           'MissingDisulfide', 'LongBondWarning', 'NonexistentParm',
+           'ParmFileNotFound', 'DuplicateParm', 'AmbiguousParmError',
+           'IncompatibleParmsError', 'AddPDBWarning', 'AddPDBError',
+           'LJ12_6_4Error', 'DuplicateParamWarning', 'HMassRepartitionError',
+           'SimulationError', 'SimulationWarning', 'UnhandledArgumentWarning',
+           'ParmIndexError', 'FileExists', 'FileDoesNotExist', 'ChamberError',
+           'TiMergeError', 'WarningList']
+
 from sys import stderr
 from parmed.exceptions import ParmedError, ParmedWarning, InputError
+from parmed.utils.six import PY2
 import warnings
+
+if PY2:
+    FileNotFoundError = IOError
 
 class ParmError(ParmedError):
     """ Base parmed error """
@@ -92,7 +112,7 @@ class LongBondWarning(ParmWarning):
 class NonexistentParm(ParmError):
     pass
 
-class NonexistentParmWarning(SeriousParmWarning):
+class ParmFileNotFound(ParmError, FileNotFoundError):
     pass
 
 class DuplicateParm(ParmError):

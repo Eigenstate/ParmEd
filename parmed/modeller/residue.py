@@ -7,11 +7,8 @@ from collections import OrderedDict
 import copy as _copy
 import numpy as np
 import os
-try:
-    import pandas as pd
-except ImportError:
-    pd = None
 from parmed.residue import AminoAcidResidue, RNAResidue, DNAResidue
+from parmed.structure import Structure
 from parmed.topologyobjects import Atom, Bond, AtomList, TrackedList
 from parmed.utils.six import iteritems
 import warnings
@@ -73,6 +70,11 @@ class ResidueTemplate(object):
         atom of this residue when this residue is the last in a chain
     groups : list of list(:class:`Atom`)
         If set, each group is a list of Atom instances making up each group
+    override_level : integer
+        For use with OpenMM ResidueTemplates. If OpenMM ForceField is given multiple
+        identically-matching residue templates with the same names it choses
+        (overrides with) the one with the highest override_level
+        (overrideLevel in OpenMM). Default is 0.
     """
 
     def __init__(self, name=''):
@@ -82,11 +84,12 @@ class ResidueTemplate(object):
         self.head = None
         self.tail = None
         self.connections = []
-        self._atomnames = set()
         self.type = UNKNOWN
         self.first_patch = None
         self.last_patch = None
         self.groups = []
+        self.override_level = 0
+        self._map = dict()
 
     def __repr__(self):
         if self.head is not None:
@@ -101,6 +104,10 @@ class ResidueTemplate(object):
                     type(self).__name__, self.name, len(self.atoms),
                     len(self.bonds), head, tail)
 
+    @property
+    def map(self):
+        return self._map
+
     def add_atom(self, atom):
         """ Adds an atom to this residue template
 
@@ -114,13 +121,13 @@ class ResidueTemplate(object):
         ValueError if ``atom`` has the same name as another atom in this
         residue already
         """
-        if atom.name in self._atomnames:
+        if atom.name in self._map:
             raise ValueError('Residue already has atom named %s' % atom.name)
         atom.residue = self
         self.atoms.append(atom)
-        self._atomnames.add(atom.name)
+        self._map[atom.name] = atom
 
-    def add_bond(self, atom1, atom2):
+    def add_bond(self, atom1, atom2, order=1.0):
         """ Adds a bond between the two provided atoms in the residue
 
         Parameters
@@ -133,6 +140,14 @@ class ResidueTemplate(object):
             The other atom in the bond. It must be in the ``atoms`` list of this
             ResidueTemplate. It can also be the atom index (index from 0) of the
             atom in the bond.
+        order : float
+            The bond order of this bond. Bonds are classified as follows:
+                1.0 -- single bond
+                2.0 -- double bond
+                3.0 -- triple bond
+                1.5 -- aromatic bond
+                1.25 -- amide bond
+            Default is 1.0
 
         Raises
         ------
@@ -156,7 +171,7 @@ class ResidueTemplate(object):
             raise RuntimeError('Both atoms must belong to template.atoms')
         # Do not add the same bond twice
         if atom1 not in atom2.bond_partners:
-            self.bonds.append(Bond(atom1, atom2))
+            self.bonds.append(Bond(atom1, atom2, order=order))
 
     @classmethod
     def from_residue(cls, residue):
@@ -220,10 +235,8 @@ class ResidueTemplate(object):
         if isinstance(atom, Atom):
             return atom in self.atoms
         if isinstance(atom, str):
-            for a in self.atoms:
-                if a.name == atom:
-                    return True
-        return False
+            return atom in self._map
+        raise AssertionError('Should not be here!')
 
     def __copy__(self):
         other = type(self)(name=self.name)
@@ -251,7 +264,10 @@ class ResidueTemplate(object):
                 if atom.name == idx:
                     return atom
             raise IndexError('Atom %s not found in %s' % (idx, self.name))
-        return self.atoms[idx]
+        elif isinstance(idx, (list, tuple)):
+            return [self[key] for key in  idx]
+        else:
+            return self.atoms[idx]
 
     def fix_charges(self, to=None, precision=4):
         """
@@ -336,7 +352,7 @@ class ResidueTemplate(object):
             - charge : float
             - mass : float
             - nb_idx : int
-            - radii : float
+            - solvent_radius : float
             - screen : float
             - occupancy : float
             - bfactor : float
@@ -359,9 +375,7 @@ class ResidueTemplate(object):
             - vy : float (y-coordinate velocity)
             - vz : float (z-coordinate velocity)
         """
-        if pd is None:
-            raise ImportError('pandas is not available; cannot create a pandas '
-                              'DataFrame from this Structure')
+        import pandas as pd
         ret = pd.DataFrame()
 
         ret['number'] = [atom.number for atom in self.atoms]
@@ -371,7 +385,7 @@ class ResidueTemplate(object):
         ret['charge'] = [atom.charge for atom in self.atoms]
         ret['mass'] = [atom.mass for atom in self.atoms]
         ret['nb_idx'] = [atom.nb_idx for atom in self.atoms]
-        ret['radii'] = [atom.radii for atom in self.atoms]
+        ret['solvent_radius'] = [atom.solvent_radius for atom in self.atoms]
         ret['screen'] = [atom.screen for atom in self.atoms]
         ret['occupancy'] = [atom.occupancy for atom in self.atoms]
         ret['bfactor'] = [atom.bfactor for atom in self.atoms]
@@ -408,16 +422,38 @@ class ResidueTemplate(object):
             ret = ret.join(vels)
         return ret
 
-    def save(self, fname, format=None, **kwargs):
+    def to_structure(self):
+        """
+        Generates a Structure instance with a single residue from this
+        ResidueTemplate
+
+        Returns
+        -------
+        struct : :class:`parmed.structure.Structure`
+            The Structure with all of the bonds and connectivity of this
+            template
+        """
+        struct = Structure()
+        for atom in self:
+            struct.add_atom(_copy.copy(atom), self.name, 0)
+        for bond in self.bonds:
+            struct.bonds.append(Bond(struct.atoms[bond.atom1.idx],
+                                     struct.atoms[bond.atom2.idx])
+            )
+        return struct
+
+    def save(self, fname, format=None, overwrite=False, **kwargs):
         """
         Saves the current ResidueTemplate in the requested file format.
         Supported formats can be specified explicitly or determined by file-name
         extension. The following formats are supported, with the recognized
-        suffix and ``format`` keyword shown in parentheses:
+        suffix shown in parentheses:
 
             - MOL2 (.mol2)
             - MOL3 (.mol3)
             - OFF (.lib/.off)
+            - PDB (.pdb)
+            - PQR (.pqr)
 
         Parameters
         ----------
@@ -429,6 +465,9 @@ class ResidueTemplate(object):
             The case-insensitive keyword specifying what type of file ``fname``
             should be saved as. If ``None`` (default), the file type will be
             determined from filename extension of ``fname``
+        overwrite : bool, optional
+            If True, allow the target file to be overwritten. Otherwise, an
+            IOError is raised if the file exists. Default is False
         kwargs : keyword-arguments
             Remaining arguments are passed on to the file writing routines that
             are called by this function
@@ -446,6 +485,8 @@ class ResidueTemplate(object):
                 '.mol3' : 'MOL3',
                 '.off' : 'OFFLIB',
                 '.lib' : 'OFFLIB',
+                '.pdb' : 'PDB',
+                '.pqr' : 'PQR',
         }
         if format is not None:
             format = format.upper()
@@ -463,6 +504,9 @@ class ResidueTemplate(object):
             Mol2File.write(self, fname, mol3=True, **kwargs)
         elif format in ('OFFLIB', 'OFF'):
             AmberOFFLibrary.write({self.name : self}, fname, **kwargs)
+        elif format in ('PDB', 'PQR'):
+            self.to_structure().save(fname, format=format, overwrite=overwrite,
+                                     **kwargs)
         else:
             raise ValueError('Unrecognized format for ResidueTemplate save')
 
@@ -551,6 +595,7 @@ class ResidueTemplateContainer(list):
                 elif RNAResidue.has(rt.name) or DNAResidue.has(rt.name):
                     rt.name = '%s3' % rt.name
             inst.append(rt)
+        inst.box = struct.box
         return inst
 
     def __getitem__(self, value):
@@ -711,4 +756,3 @@ class ResidueTemplateContainer(list):
             AmberOFFLibrary.write(self.to_library(), fname, **kwargs)
         else:
             raise ValueError('Unrecognized format for ResidueTemplate save')
-

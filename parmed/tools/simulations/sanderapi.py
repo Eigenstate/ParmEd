@@ -4,8 +4,7 @@ the sander-Python bindings
 """
 from __future__ import division, print_function
 import numpy as np
-from parmed.tools.exceptions import (SimulationError, SimulationWarning,
-               UnhandledArgumentWarning)
+from parmed.tools.exceptions import SimulationError, UnhandledArgumentWarning
 try:
     import sander
 except ImportError:
@@ -24,6 +23,12 @@ def energy(parm, args, output=sys.stdout):
     """
     Compute a single-point energy using sander and print the result to the
     desired output
+
+    Parameters
+    ----------
+    parm : Structure
+    args : ArgumentList
+    output : file handler, default sys.stdout
     """
     global HAS_SANDER
     if not HAS_SANDER:
@@ -42,7 +47,6 @@ def energy(parm, args, output=sys.stdout):
         warnings.warn("Un-handled arguments: " + ' '.join(unmarked_cmds),
                       UnhandledArgumentWarning)
 
-    gbmeth, kappa = None, 0.0
     if parm.ptr('ifbox') == 0:
         if not igb in (0, 1, 2, 5, 6, 7, 8):
             raise SimulationError('Bad igb value. Must be 0, 1, 2, 5, '
@@ -99,7 +103,7 @@ def energy(parm, args, output=sys.stdout):
             output.write('     EHbond   = %20.7f' % e.hbond)
         output.write('\nTOTAL    = %20.7f\n' % e.tot)
 
-def minimize(parm, igb, saltcon, cutoff, tol, maxcyc):
+def minimize(parm, igb, saltcon, cutoff, tol, maxcyc, disp=True):
     """ Minimizes a snapshot. Use the existing System if it exists """
     if not HAS_SANDER:
         raise SimulationError('Could not import sander')
@@ -125,7 +129,7 @@ def minimize(parm, igb, saltcon, cutoff, tol, maxcyc):
         e, f = sander.energy_forces()
         return e.tot, -np.array(f)
     with sander.setup(parm, parm.coordinates, parm.box, inp):
-        options = dict(maxiter=maxcyc, disp=True, gtol=tol)
+        options = dict(maxiter=maxcyc, disp=disp, gtol=tol)
         results = optimize.minimize(energy_function, parm.coordinates,
                                     method='L-BFGS-B', jac=True,
                                     options=options)
@@ -133,4 +137,4 @@ def minimize(parm, igb, saltcon, cutoff, tol, maxcyc):
     if not results.success:
         print('Problem minimizing structure with scipy and sander:',
               file=sys.stderr)
-        print('\t' + results.message)
+        print('\t' + results.message.decode())

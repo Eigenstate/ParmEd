@@ -8,6 +8,7 @@ from __future__ import division
 import math
 from parmed.exceptions import MoleculeError, ParameterError
 from parmed.amber.readparm import AmberFormat
+from parmed.constants import DEG_TO_RAD
 import parmed.topologyobjects as topologyobjects
 from parmed.topologyobjects import _ListItem, _FourAtomTerm, _strip_units
 from parmed.topologyobjects import *
@@ -775,6 +776,14 @@ class TestTopologyObjects(unittest.TestCase):
         self.assertIn(a1, a2.bond_partners) # Duplicated bond
         bond4.delete()
         self.assertNotIn(a1, a2.bond_partners)
+        # Now test measurements
+        self.assertIs(bond1.measure(), None)
+        self.assertIs(bond1.energy(), None)
+        self.assertIs(bond2.measure(), None)
+        self.assertIs(bond2.energy(), None)
+        a2.xx = a2.xy = a2.xz = 0.0
+        a3.xx, a3.xy, a3.xz = 1.0, 2.0, 3.0
+        self.assertEqual(bond2.measure(), math.sqrt(14))
         # Now test the bond types
         bond_types = TrackedList()
         bond_types.append(BondType(10.0, 1.0, bond_types))
@@ -793,6 +802,9 @@ class TestTopologyObjects(unittest.TestCase):
         self.assertEqual(bond2.type.idx, 1)
         self.assertEqual(bond3.type.idx, 2)
         self.assertIs(bond1.type.list, bond_types)
+        # Now test energy calculations
+        self.assertAlmostEqual(bond2.energy(),
+                bond2.type.k*(bond2.measure() - bond2.type.req)**2)
         # Test the BondTypes.__copy__ method
         cp = copy(bond_types[0])
         self.assertIsNot(cp, bond_types[0])
@@ -800,9 +812,25 @@ class TestTopologyObjects(unittest.TestCase):
         self.assertEqual(cp.idx, -1)
         self.assertEqual(cp.k, bond_types[0].k)
         self.assertEqual(cp.req, bond_types[0].req)
+        # Make sure BondType is hashable
+        bt1 = BondType(10.0, 1.0)
+        bt2 = BondType(10.01, 1.0)
+        bt3 = BondType(10.0, 1.01)
+        bt4 = BondType(11.0, 1.1)
+        self.assertEqual(hash(bt1), hash(BondType(10.0, 1.0)))
+        self.assertEqual(hash(bt2), hash(BondType(10.01, 1.0)))
+        self.assertEqual(hash(bt3), hash(BondType(10.0, 1.01)))
+        self.assertEqual(hash(bt4), hash(BondType(11.0, 1.1)))
+        # Check storage in a dict
+        d = {bt1: 1, bt2: 2, bt3: 3, bt4: 4}
+        self.assertEqual(1, d[BondType(10.0, 1.0)])
+        self.assertEqual(2, d[BondType(10.01, 1.0)])
+        self.assertEqual(3, d[BondType(10.0, 1.01)])
+        self.assertEqual(4, d[BondType(11.0, 1.1)])
         # Error handling
         self.assertRaises(MoleculeError, lambda: Bond(a1, a1))
         self.assertRaises(MoleculeError, lambda: a1.bond_to(a1))
+        self.assertRaises(KeyError, lambda: d[BondType(10.001, 1.0)])
 
     #=============================================
 
@@ -816,6 +844,13 @@ class TestTopologyObjects(unittest.TestCase):
         ang1 = Angle(a1, a2, a3)
         ang2 = Angle(a2, a3, a4)
         self.assertEqual(repr(ang1), '<Angle %r--%r--%r; type=None>' % (a1, a2, a3))
+        # Now check measurements
+        self.assertIs(ang1.measure(), None)
+        self.assertIs(ang1.energy(), None)
+        a1.xx = a1.xy = a1.xz = 0
+        a2.xx, a2.xy, a2.xz = 0, 1, 0
+        a3.xx, a3.xy, a3.xz = 1, 1, 0
+        self.assertAlmostEqual(ang1.measure(), 90)
         angle_types = TrackedList()
         # Make a set of angle types
         angle_types.append(AngleType(50.0, 109.5, angle_types))
@@ -826,6 +861,9 @@ class TestTopologyObjects(unittest.TestCase):
         ang3 = Angle(a3, a4, a2, angle_types[2])
         ang1.type = angle_types[0]
         ang2.type = angle_types[1]
+        # Now test energy
+        self.assertAlmostEqual(ang1.energy(), ang1.type.k *
+                (ang1.type.theteq*DEG_TO_RAD - ang1.measure()*DEG_TO_RAD) ** 2)
         # Test angle as a container
         self.assertIn(a1, ang1)
         self.assertIn(a2, ang1)
@@ -862,7 +900,24 @@ class TestTopologyObjects(unittest.TestCase):
         self.assertEqual(cp.idx, -1)
         self.assertEqual(cp.k, angle_types[0].k)
         self.assertEqual(cp.theteq, angle_types[0].theteq)
+        # Make sure BondType is hashable
+        at1 = AngleType(10.0, 1.0)
+        at2 = AngleType(10.01, 1.0)
+        at3 = AngleType(10.0, 1.01)
+        at4 = AngleType(11.0, 1.1)
+        self.assertEqual(hash(at1), hash(AngleType(10.0, 1.0)))
+        self.assertEqual(hash(at2), hash(AngleType(10.01, 1.0)))
+        self.assertEqual(hash(at3), hash(AngleType(10.0, 1.01)))
+        self.assertEqual(hash(at4), hash(AngleType(11.0, 1.1)))
+        # Check storage in a dict
+        d = {at1: 1, at2: 2, at3: 3, at4: 4}
+        self.assertEqual(1, d[AngleType(10.0, 1.0)])
+        self.assertEqual(2, d[AngleType(10.01, 1.0)])
+        self.assertEqual(3, d[AngleType(10.0, 1.01)])
+        self.assertEqual(4, d[AngleType(11.0, 1.1)])
         # Error handling
+        self.assertRaises(KeyError, lambda: d[AngleType(10.1, 1.0)])
+        self.assertRaises(KeyError, lambda: d[BondType(10.0, 1.0)])
         self.assertRaises(MoleculeError, lambda: Angle(a1, a2, a1))
         self.assertRaises(MoleculeError, lambda: a1.angle_to(a1))
 
@@ -929,10 +984,6 @@ class TestTopologyObjects(unittest.TestCase):
         self.assertTrue(d3.ignore_end and not d3.improper)
         self.assertFalse(d2.ignore_end or d2.improper)
         self.assertFalse(d4.ignore_end or d4.improper)
-        self.assertEqual(d1.signs, [-1, -1])
-        self.assertEqual(d2.signs, [1, 1])
-        self.assertEqual(d3.signs, [-1, 1])
-        self.assertEqual(d4.signs, [1, 1])
         self.assertEqual(d1.type.idx, 3)
         self.assertEqual(d2.type.idx, 0)
         self.assertEqual(d3.type.idx, 1)
@@ -954,6 +1005,18 @@ class TestTopologyObjects(unittest.TestCase):
         d2.delete()
         self.assertIn(atoms[0], atoms[3].dihedral_partners)
         self.assertIn(atoms[3], atoms[0].dihedral_partners)
+        # Test the measurement capabilities
+        self.assertIs(d3.measure(), None)
+        self.assertIs(d3.energy(), None)
+        a1, a2, a3, a4 = atoms[:4]
+        a1.xx, a1.xy, a1.xz = 1, 0, 0
+        a2.xx, a2.xy, a2.xz = 0, 0, 0
+        a3.xx, a3.xy, a3.xz = 0, 0, 1
+        a4.xx, a4.xy, a4.xz = 0.1, 0.6, 1
+        self.assertAlmostEqual(d3.measure(), 80.537677791974374)
+        self.assertAlmostEqual(d3.energy(),
+                d3.type.phi_k*(1+math.cos(d3.type.per*d3.measure()*DEG_TO_RAD-d3.type.phase*DEG_TO_RAD)))
+        # Now delete dihedral 3
         d3.delete()
         self.assertNotIn(atoms[0], atoms[3].dihedral_partners)
         self.assertNotIn(atoms[3], atoms[0].dihedral_partners)
@@ -968,7 +1031,20 @@ class TestTopologyObjects(unittest.TestCase):
         self.assertEqual(cp.phase, dihed_types[0].phase)
         self.assertEqual(cp.scee, dihed_types[0].scee)
         self.assertEqual(cp.scnb, dihed_types[0].scnb)
+        # Test hashing
+        self.assertEqual(hash(dihed_types[0]),
+                         hash(DihedralType(5, 2, 0, 1.2, 2.0)))
+        self.assertEqual(hash(dihed_types[1]),
+                         hash(DihedralType(1.0, 3, 180.0, 1.2, 2.0, dihed_types)))
+        self.assertEqual(hash(dihed_types[2]),
+                         hash(DihedralType(2.0, 4, 180.0, 1.2, 2.0, dihed_types)))
+        self.assertEqual(hash(dihed_types[3]),
+                         hash(DihedralType(10.0, 1, 180.0, 0., 0., dihed_types)))
+        d = dict(zip(dihed_types, range(len(dihed_types))))
+        for i, dt in enumerate(dihed_types):
+            self.assertEqual(d[dt], i)
         # Exception handling
+        self.assertRaises(KeyError, lambda: d[BondType(10.0, 1.0)])
         self.assertRaises(MoleculeError, lambda:
                 Dihedral(atoms[0], atoms[1], atoms[2], atoms[0]))
         self.assertRaises(MoleculeError, lambda: atoms[0].dihedral_to(atoms[0]))
@@ -1009,6 +1085,11 @@ class TestTopologyObjects(unittest.TestCase):
             self.assertEqual(t1.scnb, t2.scnb)
             i += 1
         self.assertEqual(i, 4)
+        # Make sure DihedralTypeList is hashable
+        hash(dihed_types[0])
+        dtcp = copy(dihed_types[0])
+        self.assertIsNot(dtcp, dihed_types)
+        self.assertEqual(hash(dtcp), hash(dihed_types[0]))
 
     #=============================================
 
@@ -1042,6 +1123,12 @@ class TestTopologyObjects(unittest.TestCase):
         self.assertEqual(cp.c3, 40)
         self.assertEqual(cp.c4, 50)
         self.assertEqual(cp.c5, 60)
+        # Check that RBTorsionType is hashable
+        for rb_type in rb_types:
+            cp = copy(rb_type)
+            self.assertIsNot(rb_type, cp)
+            self.assertEqual(hash(rb_type), hash(cp))
+            self.assertIn(rb_type, {cp})
 
     #=============================================
 
@@ -1065,6 +1152,14 @@ class TestTopologyObjects(unittest.TestCase):
         self.assertNotIn(b3, u1)
         self.assertEqual(u1.type.k, 10)
         self.assertEqual(u1.type.req, 1)
+        # Test urey-bradley measurement and energy
+        self.assertIs(u1.measure(), None)
+        self.assertIs(u1.energy(), None)
+        atoms[0].xx = atoms[0].xy = atoms[0].xz = 0
+        atoms[2].xx = atoms[2].xy = atoms[2].xz = 1
+        self.assertAlmostEqual(u1.measure(), math.sqrt(3))
+        self.assertAlmostEqual(u1.energy(),
+                               u1.type.k*(u1.measure()-u1.type.req)**2)
         # Test error checking
         self.assertRaises(MoleculeError, lambda: UreyBradley(atoms[0], atoms[0]))
 
@@ -1107,6 +1202,11 @@ class TestTopologyObjects(unittest.TestCase):
         self.assertFalse(imp3.same_atoms(imp))
         self.assertRaises(MoleculeError, lambda:
                 imp3.same_atoms([0, 1, 2]))
+        for imp_type in imp_types:
+            cp = copy(imp_type)
+            self.assertIsNot(cp, imp_type)
+            self.assertEqual(hash(cp), hash(imp_type))
+            self.assertIn(cp, {imp_type})
 
     #=============================================
 
@@ -1189,6 +1289,14 @@ class TestTopologyObjects(unittest.TestCase):
         self.assertEqual(cp.idx, -1)
         self.assertEqual(cp.resolution, cmap_types[0].resolution)
         self.assertEqual(cp.grid, cmap_types[0].grid)
+        # Check hashability of CmapType
+        for cmap_type in cmap_types:
+            cp = copy(cmap_type)
+            self.assertIsNot(cp, cmap_type)
+            self.assertIsNot(cp.grid, cmap_type.grid)
+            self.assertEqual(hash(cp), hash(cmap_type))
+            self.assertIn(cp, {cmap_type})
+            self.assertIn(cp.grid, {cmap_type.grid})
         # Check error handling
         self.assertRaises(IndexError, lambda: cmap_types[0].grid[10,10])
         def err():
@@ -1317,6 +1425,10 @@ class TestTopologyObjects(unittest.TestCase):
         self.assertEqual(t1.type.k, 50)
         self.assertEqual(repr(t1), '<OutOfPlaneBend; %r--(%r,%r,%r); type=%r>' %
                 (atoms[1], atoms[0], atoms[2], atoms[3], t1.type))
+        cp = OutOfPlaneBendType(50.0)
+        self.assertIsNot(cp, t1.type)
+        self.assertEqual(hash(cp), hash(t1.type))
+        self.assertIn(cp, {t1.type})
 
     #=============================================
 
@@ -1373,6 +1485,10 @@ class TestTopologyObjects(unittest.TestCase):
         self.assertEqual(cp.theteq, 109.0)
         self.assertEqual(repr(strbnd), '<StretchBend; %r--%r--%r; type=%r>' %
                 tuple(atoms + [strbnd.type]))
+        cp = copy(strbnd.type)
+        self.assertIsNot(cp, strbnd.type)
+        self.assertEqual(hash(cp), hash(strbnd.type))
+        self.assertIn(cp, {strbnd.type})
 
     #=============================================
 
@@ -1781,6 +1897,10 @@ class TestTopologyObjects(unittest.TestCase):
         nbe.type = nbet
         self.assertEqual(repr(nbe), '<NonbondedException; %r and %r, type=%r>' %
                          (a1, a2, nbet))
+        cp = copy(nbet)
+        self.assertIsNot(cp, nbet)
+        self.assertEqual(hash(cp), hash(nbet))
+        self.assertIn(cp, {nbet})
 
     #=============================================
 

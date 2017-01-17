@@ -235,7 +235,7 @@ class parmout(Action):
     """
     Final prmtop written after all actions are complete
     """
-    usage = '<prmtop_name> [<inpcrd_name>] [netcdf] [vmd]'
+    usage = '<prmtop_name> [<inpcrd_name>] [netcdf]'
     supported_subclasses = (AmberParm,)
     
     def init(self, arg_list):
@@ -258,8 +258,6 @@ class parmout(Action):
         if self.rst_name is not None:
             if not Action.overwrite and os.path.exists(self.rst_name):
                 raise FileExists('%s exists; not overwriting.' % self.rst_name)
-        if self.vmd is not None:
-            self.parm.convert_to_vmd_compat()
         self.parm.write_parm(self.filename)
         if self.rst_name is not None:
             self.parm.save(self.rst_name, format=self.rst7_format, overwrite=Action.overwrite)
@@ -4018,7 +4016,6 @@ class chamber(Action):
             raise ChamberError('Problem assigning parameters to PSF: %s' % e)
         parm = ConvertFromPSF(psf, parmset)
         parm.name = self.psf
-        parm.vmd_compat = self.vmd_compat
         changeRadii(parm, self.radii).execute()
         self.parm_list.add_parm(parm)
         self.parm = parm

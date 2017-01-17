@@ -368,7 +368,6 @@ class AmberFormat(object):
         self.version = None
         self.charge_flag = 'CHARGE'
         self.name = fname
-        self.vmd_compat = None
 
         if fname is not None:
             self.rdparm(fname)
@@ -798,28 +797,6 @@ class AmberFormat(object):
                                     now.hour, now.minute, now.second)
         )
 
-    #===================================================
-
-    def convert_to_vmd_compat(self):
-        """
-        Converts the flags and internal format fields to a VMD-compatible
-        format.
-        """
-        if 'TITLE' not in self.flag_list:
-            self.add_flag('TITLE', '20a4', num_items=0, after='CTITLE')
-        self.delete_flag('CTITLE')
-        self.formats['CHARGE'] = FortranFormat('5E16.8')
-        self.formats['ANGLE_EQUIL_VALUE'] = FortranFormat('5E16.8')
-        self.formats['LENNARD_JONES_ACOEF'] = FortranFormat('5E16.8')
-        self.formats['LENNARD_JONES_BCOEF'] = FortranFormat('5E16.8')
-        self.formats['LENNARD_JONES_14_ACOEF'] = FortranFormat('5E16.8')
-        self.formats['LENNARD_JONES_14_bCOEF'] = FortranFormat('5E16.8')
-        self.formats['CHARMM_CMAP_PARAMETER_01'] = FortranFormat('8F9.5')
-        self.formats['CHARMM_CMAP_PARAMETER_02'] = FortranFormat('8F9.5')
-        self.formats['CHARMM_CMAP_PARAMETER_03'] = FortranFormat('8F9.5')
-        self.formats['FORCE_FIELD_TYPE'] = FortranFormat('20a4')
-        self.vmd_compat = True
-    
     #===================================================
 
     def write_parm(self, name):

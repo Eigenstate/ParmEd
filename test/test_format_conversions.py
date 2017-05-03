@@ -2,18 +2,20 @@
 from __future__ import print_function, division, absolute_import
 
 import os
+import unittest
+import warnings
+
 import numpy as np
+
 from parmed import load_file, gromacs, amber, openmm, charmm
-from parmed.exceptions import GromacsWarning
+from parmed.exceptions import GromacsWarning, ParameterError
 from parmed.gromacs._gromacsfile import GromacsFile
 from parmed.utils.six.moves import zip, range
 from parmed import unit as u, topologyobjects as to
 from parmed.tools import addLJType
-import unittest
 from utils import (get_fn, get_saved_fn, diff_files, TestCaseRelative,
                    FileIOTestCase, HAS_GROMACS, CPU, has_openmm as HAS_OPENMM,
-                   mm, app, equal_atoms)
-import warnings
+                   mm, app, equal_atoms, EnergyTestCase)
 
 class TestAmberToGromacs(FileIOTestCase, TestCaseRelative):
     """ Tests converting Amber prmtop files to Gromacs topologies """
@@ -56,7 +58,7 @@ class TestAmberToGromacs(FileIOTestCase, TestCaseRelative):
         np.testing.assert_allclose(top.box, parm.box)
 
 @unittest.skipUnless(HAS_GROMACS, "Cannot run GROMACS tests without GROMACS")
-class TestGromacsToAmber(FileIOTestCase, TestCaseRelative):
+class TestGromacsToAmber(FileIOTestCase, EnergyTestCase):
     """ Tests converting Gromacs top/gro files to Amber """
 
     def test_simple(self):
@@ -212,7 +214,7 @@ class TestGromacsToAmber(FileIOTestCase, TestCaseRelative):
         cong.setPositions(top.positions)
         cona.setPositions(top.positions)
 
-        self._check_energies(top, cong, parm, cona)
+        self.check_energies(top, cong, parm, cona)
 
         # Make an NBFIX
         self.assertFalse(parm.has_NBFIX())
@@ -238,7 +240,103 @@ class TestGromacsToAmber(FileIOTestCase, TestCaseRelative):
         cong.setPositions(gro.positions)
         cona.setPositions(gro.positions)
 
-        self._check_energies(top, cong, parm, cona)
+        self.check_energies(top, cong, parm, cona)
+
+    @unittest.skipUnless(HAS_OPENMM, "Cannot test without OpenMM")
+    def test_rb_torsion_conversion(self):
+        """ Check equal energies for Gromacs -> Amber conversion of Amber FF """
+        top = get_fn(os.path.join('gmxtops', 'rb_torsions.top'))
+        gro = get_fn(os.path.join('gmxtops', 'rb_torsions.gro'))
+        top = load_file(top, xyz=gro)
+
+        # 4 types are defined but parmed adds entries to the dict for each
+        # ordering of the bondingtypes and one dihedral is symmetric
+        assert len(top.parameterset.rb_torsion_types) == 7
+
+        parm = amber.AmberParm.from_structure(top)
+        parm.save(get_fn('rb_torsions.prmtop', written=True))
+        parm.save(get_fn('rb_torsions.rst7', written=True))
+
+        sysg = top.createSystem()
+        sysa = parm.createSystem()
+
+        cong = mm.Context(sysg, mm.VerletIntegrator(0.001), CPU)
+        cona = mm.Context(sysa, mm.VerletIntegrator(0.001), CPU)
+
+        cong.setPositions(top.positions)
+        cona.setPositions(top.positions)
+
+        self.check_energies(top, cong, parm, cona)
+
+    @unittest.skipUnless(HAS_OPENMM, "Cannot test without OpenMM")
+    def test_rb_torsion_conversion2(self):
+        """ Check equal energies for Gromacs -> Amber conversion of Amber FF """
+        top = get_fn(os.path.join('05.OPLS', 'topol.top'))
+        gro = get_fn(os.path.join('05.OPLS', 'conf.gro'))
+        top = load_file(top, xyz=gro)
+
+        parm = amber.AmberParm.from_structure(top)
+        parm.save(get_fn('05opls.prmtop', written=True))
+        parm.save(get_fn('05opls.rst7', written=True))
+
+        sysg = top.createSystem()
+        sysa = parm.createSystem()
+
+        cong = mm.Context(sysg, mm.VerletIntegrator(0.001), CPU)
+        cona = mm.Context(sysa, mm.VerletIntegrator(0.001), CPU)
+
+        cong.setPositions(top.positions)
+        cona.setPositions(top.positions)
+
+        self.check_energies(top, cong, parm, cona)
+
+    @unittest.skipUnless(HAS_OPENMM, "Cannot test without OpenMM")
+    def test_rb_torsion_conversion3(self):
+        """ Check equal energies for Gromacs -> Amber conversion of Amber FF """
+        top = get_fn('2PPN_bulk.top')
+        gro = get_fn('2PPN_bulk.gro')
+        top = load_file(top, xyz=gro)
+
+        parm = amber.AmberParm.from_structure(top)
+        parm.save(get_fn('2PPN_bulk.prmtop', written=True))
+        parm.save(get_fn('2PPN_bulk.rst7', written=True))
+
+        sysg = top.createSystem()
+        sysa = parm.createSystem()
+
+        cong = mm.Context(sysg, mm.VerletIntegrator(0.001), CPU)
+        cona = mm.Context(sysa, mm.VerletIntegrator(0.001), CPU)
+
+        cong.setPositions(top.positions)
+        cona.setPositions(top.positions)
+
+        self.check_energies(top, cong, parm, cona)
+
+    @unittest.skipUnless(HAS_OPENMM, "Cannot test without OpenMM")
+    def test_unconvertable_rb_torsion(self):
+        """ Check equal energies for Gromacs -> Amber conversion of Amber FF """
+        top = get_fn(os.path.join('gmxtops', 'unconvertable_rb_torsion.top'))
+        gro = get_fn(os.path.join('gmxtops', 'rb_torsions.gro'))
+        top = load_file(top, xyz=gro)
+
+        # 4 types are defined but parmed adds entries to the dict for each
+        # ordering of the bondingtypes and one dihedral is symmetric
+        assert len(top.parameterset.rb_torsion_types) == 7
+
+        parm = amber.AmberParm.from_structure(top)
+        parm.save(get_fn('rb_torsions.prmtop', written=True))
+        parm.save(get_fn('rb_torsions.rst7', written=True))
+
+        sysg = top.createSystem()
+        sysa = parm.createSystem()
+
+        cong = mm.Context(sysg, mm.VerletIntegrator(0.001), CPU)
+        cona = mm.Context(sysa, mm.VerletIntegrator(0.001), CPU)
+
+        cong.setPositions(top.positions)
+        cona.setPositions(top.positions)
+
+        self.check_energies(top, cong, parm, cona)
 
     @unittest.skipUnless(HAS_OPENMM, "Cannot test without OpenMM")
     def test_energy_complicated(self):
@@ -259,24 +357,10 @@ class TestGromacsToAmber(FileIOTestCase, TestCaseRelative):
         cong.setPositions(gro.positions)
         cona.setPositions(gro.positions)
 
-        self._check_energies(top, cong, parm, cona)
+        self.check_energies(top, cong, parm, cona)
 
         warnings.filterwarnings('always', category=GromacsWarning)
 
-
-    def _check_energies(self, parm1, con1, parm2, con2):
-        ene1 = openmm.utils.energy_decomposition(parm1, con1)
-        ene2 = openmm.utils.energy_decomposition(parm2, con2)
-
-        all_terms = set(ene1.keys()) | set(ene2.keys())
-
-        for term in all_terms:
-            if term not in ene1:
-                self.assertAlmostEqual(ene2[term], 0)
-            elif term not in ene2:
-                self.assertAlmostEqual(ene1[term], 0)
-            else:
-                self.assertRelativeEqual(ene2[term], ene1[term], places=5)
 
 class TestAmberToCharmm(FileIOTestCase, TestCaseRelative):
     """ Tests converting Amber files to CHARMM """
@@ -327,7 +411,7 @@ class TestAmberToCharmm(FileIOTestCase, TestCaseRelative):
         self.assertEqual(nnormal+nimp, len(psf.dihedrals))
 
 @unittest.skipUnless(HAS_OPENMM, "Cannot test without OpenMM")
-class TestOpenMMToAmber(FileIOTestCase, TestCaseRelative):
+class TestOpenMMToAmber(FileIOTestCase, EnergyTestCase):
     """
     Tests that OpenMM system/topology combo can be translated to other formats
     """
@@ -347,24 +431,11 @@ class TestOpenMMToAmber(FileIOTestCase, TestCaseRelative):
         con1.setPositions(parm.positions)
         con2.setPositions(parm.positions)
 
-        self._check_energies(parm, con1, parm2, con2)
+        self.check_energies(parm, con1, parm2, con2)
 
-    def _check_energies(self, parm1, con1, parm2, con2):
-        ene1 = openmm.utils.energy_decomposition(parm1, con1)
-        ene2 = openmm.utils.energy_decomposition(parm2, con2)
-
-        all_terms = set(ene1.keys()) | set(ene2.keys())
-
-        for term in all_terms:
-            if term not in ene1:
-                self.assertAlmostEqual(ene2[term], 0)
-            elif term not in ene2:
-                self.assertAlmostEqual(ene1[term], 0)
-            else:
-                self.assertRelativeEqual(ene2[term], ene1[term], places=5)
 
 @unittest.skipUnless(HAS_OPENMM, "Cannot test without OpenMM")
-class TestOpenMMToGromacs(FileIOTestCase, TestCaseRelative):
+class TestOpenMMToGromacs(FileIOTestCase, EnergyTestCase):
     """
     Tests that OpenMM system/topology combo can be translated to other formats
     """
@@ -384,19 +455,4 @@ class TestOpenMMToGromacs(FileIOTestCase, TestCaseRelative):
         con1.setPositions(parm.positions)
         con2.setPositions(parm.positions)
 
-        self._check_energies(parm, con1, parm2, con2)
-
-    def _check_energies(self, parm1, con1, parm2, con2):
-        ene1 = openmm.utils.energy_decomposition(parm1, con1)
-        ene2 = openmm.utils.energy_decomposition(parm2, con2)
-
-        all_terms = set(ene1.keys()) | set(ene2.keys())
-
-        for term in all_terms:
-            if term not in ene1:
-                self.assertAlmostEqual(ene2[term], 0)
-            elif term not in ene2:
-                self.assertAlmostEqual(ene1[term], 0)
-            else:
-                self.assertRelativeEqual(ene2[term], ene1[term], places=5)
-
+        self.check_energies(parm, con1, parm2, con2)

@@ -4,6 +4,7 @@ Tests parmed.formats package
 from __future__ import division
 import utils
 
+from copy import copy
 import numpy as np
 import parmed as pmd
 from parmed import amber, charmm, exceptions, formats, gromacs, residue
@@ -19,7 +20,7 @@ import os
 import sys
 import unittest
 from utils import (get_fn, diff_files, get_saved_fn, run_all_tests,
-                   HAS_GROMACS, FileIOTestCase)
+                   HAS_GROMACS, FileIOTestCase, create_random_structure)
 import warnings
 
 def reset_stringio(io):
@@ -81,6 +82,17 @@ class TestFileLoader(FileIOTestCase):
         parm = formats.load_file(get_fn('trx.inpcrd'))
         self.assertIsInstance(parm, amber.AmberAsciiRestart)
 
+    def test_load_amber_restart_ascii_as_structure(self):
+        """ Tests automatic loading of Amber ASCII restart file to Structure """
+        parm = pmd.load_file(get_fn('ala3_solv.rst7'), structure=True)
+        inpcrd = pmd.load_file(get_fn('ala3_solv.rst7'))
+        self.assertIsInstance(parm, Structure)
+        np.testing.assert_almost_equal(parm.box, inpcrd.box)
+        np.testing.assert_almost_equal(parm.coordinates, inpcrd.coordinates[0])
+        # dummy testing to assign box
+        # issue #778
+        parm.box = [0.]*6
+
     def test_load_amber_traj_ascii(self):
         """ Tests automatic loading of Amber mdcrd file """
         crd = formats.load_file(get_fn('tz2.truncoct.crd'), natom=5827,
@@ -134,6 +146,25 @@ class TestFileLoader(FileIOTestCase):
         self.assertEqual(len(pdb.atoms), 49)
         self.assertEqual(len(pdb.residues), 1)
         self.assertEqual(pdb.residues[0].name, 'SAM')
+
+    def test_load_pdb_with_negative_resnum(self):
+        """ Tests negative residue numbers in PDB writing """
+        # Make a random structure
+        struct = read_PDB(get_fn('4lzt.pdb'))
+        for i, residue in enumerate(struct.residues):
+            residue.number = i - 2
+        for i, atom in enumerate(struct.atoms):
+            atom.number = i - 2
+        mypdb = get_fn('negative_indexes.pdb', written=True)
+        struct.save(mypdb, renumber=False)
+        struct2 = read_PDB(mypdb)
+        self.assertEqual(len(struct.atoms), len(struct2.atoms))
+        self.assertEqual(len(struct.residues), len(struct2.residues))
+        # Now make sure the numbers are still negative
+        for i, atom in enumerate(struct2.atoms):
+            self.assertEqual(atom.number, i-2)
+        for i, residue in enumerate(struct2.residues):
+            self.assertEqual(residue.number, i-2)
 
     def test_load_cif(self):
         """ Tests automatic loading of PDBx/mmCIF files """
@@ -857,6 +888,15 @@ class TestPDBStructure(FileIOTestCase):
                 has_hetatms = has_hetatms or line.startswith('HETATM')
             self.assertTrue(has_hetatms)
 
+    def test_ter_copy(self):
+        """ Test that copying a Structure preserves TER card presence """
+        pdbfile = read_PDB(get_fn('ala_ala_ala.pdb')) * 5
+        fn = get_fn('test.pdb', written=True)
+        pdbfile.write_pdb(fn)
+        parsed = read_PDB(fn)
+        self.assertEqual(sum([r.ter for r in parsed.residues]), 5)
+        self.assertEqual(sum([r.ter for r in copy(parsed).residues]), 5)
+
     def test_pdb_big_coordinates(self):
         """ Test proper PDB coordinate parsing for large coordinates """
         pdbfile = read_PDB(get_fn('bigz.pdb'))
@@ -1012,7 +1052,13 @@ class TestPDBStructure(FileIOTestCase):
         pdbfile.write_pdb(f, write_anisou=True)
         self.assertTrue(diff_files(get_saved_fn('SCM_A_formatted.pdb'), f))
 
+    def test_pdb_multimodel_parsing_bug_820(self):
+        """ Test model failing in parsing due to bug #820 in GitHub """
+        # Just make sure it does not raise an exception
+        self.assertEqual(len(download_PDB('1aaf').atoms), 893)
+
     def test_pdb_write_symmetry_data(self):
+        """ Tests writing PDB file with symmetry data """
         def assert_remark_290(parm, remark_290_lines):
             output = StringIO()
             parm.write_pdb(output)
@@ -1089,6 +1135,7 @@ REMARK 290   SMTRY3   4  0.000000  0.000000 -1.000000        0.00000
             self.assertEqual(formats.pdb._standardize_resname(res.abbr), (res.abbr, False))
 
     def test_deprecations(self):
+        """ Test functions that raise deprecation warnings """
         fn = get_fn('blah', written=True)
         parm = formats.load_file(get_fn('ash.parm7'), get_fn('ash.rst7'))
         self.assertRaises(DeprecationWarning, lambda: write_PDB(parm, fn))
@@ -1569,6 +1616,19 @@ class TestCIFStructure(FileIOTestCase):
         self._check4lzt(read_CIF(fn))
         self.assertRaises(ValueError, lambda: download_CIF('illegal'))
         self.assertRaises(IOError, lambda: download_CIF('#@#%'))
+
+    def test_cif_symmetry(self):
+        """ Tests that symmetry is parsed from mmCIF files correctly """
+        self.assertEqual(download_CIF('1aki').space_group, 'P 21 21 21')
+
+    def test_cif_space_group_written_from_structure(self):
+        """ Tests CIF file writing with space groups """
+        parm = pmd.load_file(get_fn('SCM_A.pdb'))
+        self.assertEqual(parm.space_group, 'P 1 21 1')
+        written = get_fn('test.cif', written=True)
+        parm.write_cif(written)
+        parm2 = pmd.load_file(written)
+        self.assertEqual(parm2.space_group, 'P 1 21 1')
 
     def test_cif_models(self):
         """ Test CIF parsing/writing NMR structure with 20 models (2koc) """

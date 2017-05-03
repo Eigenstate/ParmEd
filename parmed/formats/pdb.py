@@ -85,7 +85,13 @@ def _is_hetatm(resname):
     if len(resname) != 3:
         return not (RNAResidue.has(resname) or DNAResidue.has(resname))
     return not (AminoAcidResidue.has(resname) or RNAResidue.has(resname)
-            or DNAResidue.has(resname))
+                or DNAResidue.has(resname))
+
+def _number_truncated_to_n_digits(num, digits):
+    """ Truncates the given number to the specified number of digits """
+    if num < 0:
+        return int(-(-num % eval('1e%d' % (digits-1))))
+    return int(num % eval('1e%d' % digits))
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -100,7 +106,7 @@ class PDBFile(object):
 
         Parameters
         ----------
-        filename : str
+        filename : str or file object
             Name of the file to check format for
 
         Returns
@@ -108,8 +114,15 @@ class PDBFile(object):
         is_fmt : bool
             True if it is a PDB file
         """
-        with closing(genopen(filename, 'r')) as f:
-            for line in f:
+        if isinstance(filename, string_types):
+            own_handle = True
+            fileobject = genopen(filename, 'r')
+        elif hasattr(filename, 'read'):
+            own_handle = False
+            fileobject = filename
+
+        try:
+            for line in fileobject:
                 if line[:6] in ('CRYST1', 'END   ', 'END', 'HEADER', 'NUMMDL',
                         'MASTER', 'AUTHOR', 'CAVEAT', 'COMPND', 'EXPDTA',
                         'MDLTYP', 'KEYWDS', 'OBSLTE', 'SOURCE', 'SPLIT ',
@@ -127,7 +140,7 @@ class PDBFile(object):
                         return False
                 elif line[:6] in ('ATOM  ', 'HETATM'):
                     atnum, atname = line[6:11], line[12:16]
-                    resname, resid = line[17:21], line[22:26]
+                    resname, resid = line[17:20], line[22:26]
                     x, y, z = line[30:38], line[38:46], line[46:54]
                     occupancy, bfactor = line[54:60], line[60:66]
                     elem = line[76:78]
@@ -159,6 +172,9 @@ class PDBFile(object):
                 else:
                     return False
             return False
+        finally:
+            if own_handle:
+                fileobject.close()
 
     #===================================================
 
@@ -328,7 +344,7 @@ class PDBFile(object):
                 if rec == 'ATOM  ' or rec == 'HETATM':
                     atomno += 1
                     atnum, atname, altloc = line[6:11], line[12:16], line[16]
-                    resname, chain = line[17:21], line[21]
+                    resname, chain = line[17:20], line[21]
                     resid, inscode = line[22:resend], line[26]
                     x, y, z = line[30:38], line[38:46], line[46:54]
                     occupancy, bfactor = line[54:60], line[60:66]
@@ -462,7 +478,7 @@ class PDBFile(object):
                                         inscode, segid)
                     else:
                         try:
-                            orig_atom = struct.atoms[atomno-1]
+                            last_atom = orig_atom = struct.atoms[atomno-1]
                         except IndexError:
                             raise PDBError('Extra atom in MODEL %d' % modelno)
                         if (orig_atom.residue.name != resname.strip()
@@ -731,6 +747,11 @@ class PDBFile(object):
         written, as the PDB standard dictates that only one set of unit cells
         shall be present).
         """
+        # Determine if we have *any* atom or residue numbers set. If none of
+        # them are set, force renumbering
+        no_atom_numbers_assigned = {a.number for a in struct.atoms} == {-1}
+        no_residue_numbers_assigned = {r.number for r in struct.residues} == {-1}
+        renumber = renumber or (no_atom_numbers_assigned and no_residue_numbers_assigned)
         if altlocs.lower() == 'all'[:len(altlocs)]:
             altlocs = 'all'
         elif altlocs.lower() == 'first'[:len(altlocs)]:
@@ -778,6 +799,8 @@ class PDBFile(object):
                 raise TypeError("Coordinates has unexpected shape")
         else:
             coords = struct.get_coordinates('all')
+            if coords is None:
+                raise ValueError('Cannot write PDB file with no coordinates')
         # Create a function to process each atom and return which one we want
         # to print, based on our alternate location choice
         if altlocs == 'all':
@@ -803,7 +826,6 @@ class PDBFile(object):
             standardize = lambda x: (x[:reslen], _is_hetatm(x))
         nmore = 0 # how many *extra* atoms have been added?
         last_number = 0
-        last_rnumber = 0
         for model, coord in enumerate(coords):
             if coords.shape[0] > 1:
                 dest.write('MODEL      %5d\n' % (model+1))
@@ -820,15 +842,12 @@ class PDBFile(object):
                     pa, others, (x, y, z) = print_atoms(atom, coord)
                     # Figure out the serial numbers we want to print
                     if renumber:
-                        anum = (atom.idx + 1 + nmore)
-                        rnum = (res.idx + 1)
+                        anum = _number_truncated_to_n_digits(atom.idx + 1 + nmore, 5)
+                        rnum = _number_truncated_to_n_digits(res.idx + 1, 4)
                     else:
-                        anum = (pa.number or last_number + 1)
-                        rnum = (atom.residue.number or last_rnumber + 1)
-                    anum = anum - anum // 100000 * 100000
-                    rnum = rnum - rnum // 10000 * 10000
+                        anum = _number_truncated_to_n_digits(pa.number, 5)
+                        rnum = _number_truncated_to_n_digits(res.number, 4)
                     last_number = anum
-                    last_rnumber = rnum
                     # Do any necessary name munging to respect the PDB spec
                     if len(pa.name) < 4 and len(Element[pa.atomic_number]) != 2:
                         aname = ' %-3s' % pa.name
@@ -839,7 +858,7 @@ class PDBFile(object):
                         rec = hetatomrec
                     else:
                         rec = atomrec
-                    dest.write(rec % (anum , aname, pa.altloc, resname,
+                    dest.write(rec % (anum, aname, pa.altloc, resname,
                                res.chain[:1], rnum, res.insertion_code[:1],
                                x, y, z, pa.occupancy, pa.bfactor, segid,
                                Element[pa.atomic_number].upper(), ''))
@@ -1259,13 +1278,16 @@ class CIFFile(object):
                 alphaid = cell.getAttributeIndex('angle_alpha')
                 betaid = cell.getAttributeIndex('angle_beta')
                 gammaid = cell.getAttributeIndex('angle_gamma')
-                spaceid = cell.getAttributeIndex('space_group_name_H-M')
                 row = cell.getRow(0)
                 struct.box = np.array(
                         [float(row[aid]), float(row[bid]), float(row[cid]),
                          float(row[alphaid]), float(row[betaid]),
                          float(row[gammaid])]
                 )
+            symmetry = cont.getObj('symmetry')
+            if symmetry is not None:
+                spaceid = symmetry.getAttributeIndex('space_group_name_H-M')
+                row = symmetry.getRow(0)
                 if spaceid != -1:
                     struct.space_group = row[spaceid]
             # Check for anisotropic B-factors
@@ -1318,9 +1340,6 @@ class CIFFile(object):
                             atom.anisou = None
                         warnings.warn('Problem processing anisotropic '
                                       'B-factors. Skipping', PDBWarning)
-            symmetry_obj = cont.getObj('symmetry')
-            if symmetry_obj is not None:
-                struct.space_group = symmetry_obj.getRow(0)[1]
             if xyz:
                 if len(xyz) != len(struct.atoms) * 3:
                     raise ValueError('Corrupt CIF; all models must have the '
@@ -1419,6 +1438,11 @@ class CIFFile(object):
             cell.appendAttribute('angle_gamma')
             cell.append(struct.box[:])
             cont.append(cell)
+        # symmetry
+        sym = containers.DataCategory('symmetry')
+        sym.appendAttribute('space_group_name_H-M')
+        sym.append([struct.space_group])
+        cont.append(sym)
         if coordinates is not None:
             coords = np.array(coordinates, copy=False, subok=True)
             try:
@@ -1427,6 +1451,8 @@ class CIFFile(object):
                 raise TypeError("Coordinates has unexpected shape")
         else:
             coords = struct.get_coordinates('all')
+            if coords is None:
+                raise ValueError('Cannot write CIF file with no coordinates')
         # Create a function to process each atom and return which one we want
         # to print, based on our alternate location choice
         if altlocs == 'all':

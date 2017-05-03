@@ -21,31 +21,34 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 59 Temple Place - Suite 330
 Boston, MA 02111-1307, USA.
 """
-from __future__ import division, print_function
+from __future__ import absolute_import, division, print_function
 
+import math
+import os
 from collections import defaultdict
 from copy import copy
-import math
+
 import numpy as np
-import os
-from parmed.constants import DEG_TO_RAD, SMALL
-from parmed.exceptions import ParameterError
-from parmed.geometry import (box_lengths_and_angles_to_vectors,
-        box_vectors_to_lengths_and_angles, STANDARD_BOND_LENGTHS_SQUARED,
-        distance2)
-from parmed.topologyobjects import (AtomList, ResidueList, TrackedList,
-        DihedralTypeList, Bond, Angle, Dihedral, UreyBradley, Improper, Cmap,
-        TrigonalAngle, OutOfPlaneBend, PiTorsion, StretchBend, TorsionTorsion,
-        NonbondedException, AcceptorDonor, Group, ExtraPoint, ChiralFrame,
-        TwoParticleExtraPointFrame, MultipoleFrame, NoUreyBradley, Atom,
-        ThreeParticleExtraPointFrame, OutOfPlaneExtraPointFrame,
-        UnassignedAtomType)
-from parmed import unit as u, residue
-from parmed.utils import tag_molecules, PYPY, find_atom_pairs
-from parmed.utils.decorators import needs_openmm
-from parmed.utils.six import string_types, integer_types, iteritems
-from parmed.utils.six.moves import zip, range
-from parmed.vec3 import Vec3
+
+from . import unit as u
+from . import residue
+from .constants import DEG_TO_RAD, SMALL
+from .exceptions import ParameterError
+from .geometry import (STANDARD_BOND_LENGTHS_SQUARED, box_lengths_and_angles_to_vectors,
+                       box_vectors_to_lengths_and_angles, distance2)
+from .topologyobjects import (AcceptorDonor, Angle, Atom, AtomList, Bond, ChiralFrame, Cmap,
+                              Dihedral, DihedralType, DihedralTypeList, ExtraPoint, Group, Improper,
+                              MultipoleFrame, NonbondedException, NoUreyBradley, OutOfPlaneBend,
+                              OutOfPlaneExtraPointFrame, PiTorsion, ResidueList, StretchBend,
+                              ThreeParticleExtraPointFrame, TorsionTorsion, TrackedList,
+                              TrigonalAngle, TwoParticleExtraPointFrame, UnassignedAtomType,
+                              UreyBradley)
+from .utils import PYPY, find_atom_pairs, tag_molecules
+from .utils.decorators import needs_openmm
+from .utils.six import integer_types, iteritems, string_types
+from .utils.six.moves import range, zip
+from .vec3 import Vec3
+
 # Try to import the OpenMM modules
 try:
     from simtk.openmm import app
@@ -621,6 +624,9 @@ class Structure(object):
         c._box = copy(self._box)
         c._coordinates = copy(self._coordinates)
         c.combining_rule = self.combining_rule
+        # Transfer TER cards
+        for r1, r2 in zip(c.residues, self.residues):
+            r1.ter = r2.ter
         return c
 
     #===================================================
@@ -768,6 +774,7 @@ class Structure(object):
         partners arrays
         """
         set14 = set()
+        deferred_dihedrals = [] # to work around pmemd tossing pn=0 dihedrals
         for dihedral in self.dihedrals:
             if dihedral.ignore_end : continue
             if (dihedral.atom1 in dihedral.atom4.bond_partners or
@@ -776,9 +783,19 @@ class Structure(object):
             elif (dihedral.atom1.idx, dihedral.atom4.idx) in set14:
                 # Avoid double counting of 1-4 in a six-membered ring
                 dihedral.ignore_end = True
+            elif isinstance(dihedral.type, DihedralType) and dihedral.type.per == 0:
+                # This needs to be done to work around a "feature" in pmemd where periodicity=0
+                # torsions are thrown away. Since AmberParm never has any DihedralTypeList, we only
+                # need to defer periodicity=0 torsions for DihedralType torsions.
+                deferred_dihedrals.append(dihedral)
             else:
                 set14.add((dihedral.atom1.idx, dihedral.atom4.idx))
                 set14.add((dihedral.atom4.idx, dihedral.atom1.idx))
+        # Only keep ignore_end = False if we *must*; i.e., if the exclusion it would have
+        # added was not added by anybody else
+        for dihedral in deferred_dihedrals:
+            if (dihedral.atom1.idx, dihedral.atom4.idx) in set14:
+                dihedral.ignore_end = True
 
     #===================================================
 
@@ -1121,7 +1138,8 @@ class Structure(object):
                     oval[-1].funct = val.funct
             # Now tack on the "new" types copied from `other`
             for used, typ in zip(used_types, otypcp):
-                if used: otyp.append(typ)
+                if used:
+                    otyp.append(typ)
             if hasattr(otyp, 'claim'):
                 otyp.claim()
         copy_valence_terms(struct.bonds, struct.bond_types, self.bonds,
@@ -1130,58 +1148,40 @@ class Structure(object):
                            self.angle_types, ['atom1', 'atom2', 'atom3'])
         copy_valence_terms(struct.dihedrals, struct.dihedral_types,
                            self.dihedrals, self.dihedral_types,
-                           ['atom1', 'atom2', 'atom3', 'atom4', 'improper',
-                           'ignore_end'])
+                           ['atom1', 'atom2', 'atom3', 'atom4', 'improper', 'ignore_end'])
         copy_valence_terms(struct.rb_torsions, struct.rb_torsion_types,
                            self.rb_torsions, self.rb_torsion_types,
-                           ['atom1', 'atom2', 'atom3', 'atom4', 'improper',
-                           'ignore_end'])
-        copy_valence_terms(struct.urey_bradleys, struct.urey_bradley_types,
-                           self.urey_bradleys, self.urey_bradley_types,
-                           ['atom1', 'atom2'])
-        copy_valence_terms(struct.impropers, struct.improper_types,
-                           self.impropers, self.improper_types,
-                           ['atom1', 'atom2', 'atom3', 'atom4'])
-        copy_valence_terms(struct.cmaps, struct.cmap_types,
-                           self.cmaps, self.cmap_types,
+                           ['atom1', 'atom2', 'atom3', 'atom4', 'improper', 'ignore_end'])
+        copy_valence_terms(struct.urey_bradleys, struct.urey_bradley_types, self.urey_bradleys,
+                           self.urey_bradley_types, ['atom1', 'atom2'])
+        copy_valence_terms(struct.impropers, struct.improper_types, self.impropers,
+                           self.improper_types, ['atom1', 'atom2', 'atom3', 'atom4'])
+        copy_valence_terms(struct.cmaps, struct.cmap_types, self.cmaps, self.cmap_types,
                            ['atom1', 'atom2', 'atom3', 'atom4', 'atom5'])
         copy_valence_terms(struct.trigonal_angles, struct.trigonal_angle_types,
                            self.trigonal_angles, self.trigonal_angle_types,
                            ['atom1', 'atom2', 'atom3', 'atom4'])
-        copy_valence_terms(struct.out_of_plane_bends,
-                           struct.out_of_plane_bend_types,
-                           self.out_of_plane_bends,
-                           self.out_of_plane_bend_types,
+        copy_valence_terms(struct.out_of_plane_bends, struct.out_of_plane_bend_types,
+                           self.out_of_plane_bends, self.out_of_plane_bend_types,
                            ['atom1', 'atom2', 'atom3', 'atom4'])
         copy_valence_terms(struct.pi_torsions, struct.pi_torsion_types,
                            self.pi_torsions, self.pi_torsion_types,
-                           ['atom1', 'atom2', 'atom3', 'atom4', 'atom5',
-                            'atom6'])
-        copy_valence_terms(struct.stretch_bends, struct.stretch_bend_types,
-                           self.stretch_bends, self.stretch_bend_types,
-                           ['atom1', 'atom2', 'atom3'])
+                           ['atom1', 'atom2', 'atom3', 'atom4', 'atom5', 'atom6'])
+        copy_valence_terms(struct.stretch_bends, struct.stretch_bend_types, self.stretch_bends,
+                           self.stretch_bend_types, ['atom1', 'atom2', 'atom3'])
         copy_valence_terms(struct.torsion_torsions, struct.torsion_torsion_types,
                            self.torsion_torsions, self.torsion_torsion_types,
                            ['atom1', 'atom2', 'atom3', 'atom4', 'atom5'])
         copy_valence_terms(struct.chiral_frames, [], self.chiral_frames, [],
                            ['atom1', 'atom2', 'chirality'])
-        copy_valence_terms(struct.multipole_frames, [], self.multipole_frames,
-                           [], ['atom', 'frame_pt_num', 'vectail', 'vechead',
-                           'nvec'])
+        copy_valence_terms(struct.multipole_frames, [], self.multipole_frames, [],
+                           ['atom', 'frame_pt_num', 'vectail', 'vechead', 'nvec'])
         copy_valence_terms(struct.adjusts, struct.adjust_types, self.adjusts,
                            self.adjust_types, ['atom1', 'atom2'])
-        copy_valence_terms(struct.donors, [], self.donors, [],
-                           ['atom1', 'atom2'])
-        copy_valence_terms(struct.acceptors, [], self.acceptors, [],
-                           ['atom1', 'atom2'])
-        copy_valence_terms(struct.groups, [], self.groups, [],
-                           ['atom', 'type', 'move'])
-        if self.box is not None:
-            try:
-                struct.box = self.box
-            except KeyError:
-                # will be handled in subclass
-                pass
+        copy_valence_terms(struct.donors, [], self.donors, [], ['atom1', 'atom2'])
+        copy_valence_terms(struct.acceptors, [], self.acceptors, [], ['atom1', 'atom2'])
+        copy_valence_terms(struct.groups, [], self.groups, [], ['atom', 'type', 'move'])
+        struct._box = self._box
         struct.symmetry = self.symmetry
         struct.space_group = self.space_group
         return struct
@@ -1424,10 +1424,11 @@ class Structure(object):
 
         Parameters
         ----------
-        fname : str
-            Name of the file to save. If ``format`` is ``None`` (see below), the
-            file type will be determined based on the filename extension. If the
-            type cannot be determined, a ValueError is raised.
+        fname : str or file-like object
+            Name of the file or file-like object to save. If ``format`` is 
+            ``None`` (see below), the file type will be determined based on 
+            the filename extension. If ``fname`` is file-like object,  ``format`` 
+            must be  provided. If the type cannot be determined, a ValueError is raised.
         format : str, optional
             The case-insensitive keyword specifying what type of file ``fname``
             should be saved as. If ``None`` (default), the file type will be
@@ -1469,8 +1470,12 @@ class Structure(object):
         }
         # Basically everybody uses atom type names instead of type indexes. So
         # convert to atom type names and switch back if need be
-        if os.path.exists(fname) and not overwrite:
-            raise IOError('%s exists; not overwriting' % fname)
+        if not hasattr(fname, 'write'):
+            if os.path.exists(fname) and not overwrite:
+                raise IOError('%s exists; not overwriting' % fname)
+        else:
+            if format is None:
+                raise RuntimeError('Must provide supported format if using file-like object')
         all_ints = True
         for atom in self.atoms:
             if (isinstance(atom.type, integer_types) and
@@ -2427,7 +2432,11 @@ class Structure(object):
         """
         if not self.impropers: return None
         frc_conv = u.kilocalories.conversion_factor_to(u.kilojoules)
-        force = mm.CustomTorsionForce("k*(theta-theta0)^2")
+        energy_function = 'k*dtheta_torus^2;'
+        energy_function += 'dtheta_torus = dtheta - floor(dtheta/(2*pi)+0.5)*(2*pi);'
+        energy_function += 'dtheta = theta - theta0;'
+        energy_function += 'pi = %f;' % math.pi
+        force = mm.CustomTorsionForce(energy_function)
         force.addPerTorsionParameter('k')
         force.addPerTorsionParameter('theta0')
         force.setForceGroup(self.IMPROPER_FORCE_GROUP)

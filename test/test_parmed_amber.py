@@ -256,12 +256,9 @@ class TestReadParm(FileIOTestCase):
         self.assertFalse(gasparm.has_cmap)
         self.assertEqual(gasparm.combining_rule, 'lorentz')
 
-        self.assertEqual([a.xx for a in gasparm.atoms],
-                         [a.xx for a in parm.atoms])
-        self.assertEqual([a.xy for a in gasparm.atoms],
-                         [a.xy for a in parm.atoms])
-        self.assertEqual([a.xz for a in gasparm.atoms],
-                         [a.xz for a in parm.atoms])
+        self.assertEqual([a.xx for a in gasparm.atoms], [a.xx for a in parm.atoms])
+        self.assertEqual([a.xy for a in gasparm.atoms], [a.xy for a in parm.atoms])
+        self.assertEqual([a.xz for a in gasparm.atoms], [a.xz for a in parm.atoms])
 
         # Now run the tests for the prmtop
         self._standard_parm_tests(parm)
@@ -269,6 +266,11 @@ class TestReadParm(FileIOTestCase):
         self.assertFalse(parm.amoeba)
         self.assertRaises(KeyError, lambda: parm.parm_data['BOX_DIMENSIONS'])
         self.assertEqual(parm.ptr('ifbox'), 0)
+
+        # Now check that IFBOX is set to 3 if we set the box to something non-orthogonal and
+        # non-octahedral
+        parm.box = [10, 10, 10, 90, 60, 90]
+        self.assertEqual(parm.ptr('ifbox'), 3)
 
         # Now check the restart file
         rst = readparm.Rst7.open(get_fn('trx.inpcrd'))
@@ -767,7 +769,7 @@ class TestReadParm(FileIOTestCase):
         tmp.box = [3, 3, 3, 109, 109, 90]
         parm = readparm.AmberParm.from_structure(tmp)
         np.testing.assert_equal(parm.box, tmp.box)
-        self.assertEqual(parm.ptr('ifbox'), 2)
+        self.assertEqual(parm.ptr('ifbox'), 3)
         self.assertEqual(parm.parm_data['BOX_DIMENSIONS'], [109, 3, 3, 3])
 
         # Check that a loaded structure without periodicities is properly warned
@@ -779,14 +781,14 @@ class TestReadParm(FileIOTestCase):
         # warns)
         tmp.dihedral_types[0][0].per = 0
         warnings.filterwarnings('error', category=AmberWarning)
-        self.assertRaises(AmberWarning, lambda:
-                readparm.AmberParm.from_structure(tmp))
+#       self.assertRaises(AmberWarning, lambda:
+#               readparm.AmberParm.from_structure(tmp))
         self.assertRaises(AmberWarning, lambda:
                 readparm.ChamberParm.from_structure(tmp))
         warnings.filterwarnings('ignore', category=AmberWarning)
         parm = readparm.AmberParm.from_structure(tmp)
-        self.assertEqual(parm.dihedral_types[0].per, 1)
-        self.assertEqual(parm.dihedral_types[0].phi_k, 0)
+        self.assertEqual(parm.dihedral_types[0].per, 0)
+        self.assertAlmostEqual(parm.dihedral_types[0].phi_k, 0.27)
         self.assertEqual(parm.dihedral_types[0].phase,
                          tmp.dihedral_types[0][0].phase)
         parm = readparm.ChamberParm.from_structure(tmp)
@@ -810,6 +812,7 @@ class TestReadParm(FileIOTestCase):
         parm.rdparm(get_fn('old.prmtop'), slow=True)
         parm = parm.view_as(readparm.AmberParm)
         self._standard_parm_tests(parm)
+        self.assertRaises(TypeError, lambda: readparm.AmberFormat().rdparm_slow(object()))
 
     # Tests for individual prmtops
     def _standard_parm_tests(self, parm, has1012=False):
@@ -897,7 +900,11 @@ class TestParameterFiles(FileIOTestCase):
     def test_file_detection_frcmod(self):
         """ Tests the detection of Amber frcmod files """
         for fname in glob.glob(os.path.join(get_fn('parm'), 'frcmod.*')):
-            self.assertTrue(parameters.AmberParameterSet.id_format(fname))
+            try:
+                self.assertTrue(parameters.AmberParameterSet.id_format(fname))
+            except Exception as e:
+                print('Unexpected failure with %s' % fname)
+                raise
         # Now try creating a bunch of non-frcmod files to test the file ID
         # discrimination
         fn = get_fn('test.frcmod', written=True)

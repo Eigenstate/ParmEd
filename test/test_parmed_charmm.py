@@ -537,6 +537,8 @@ class TestCharmmPsf(utils.FileIOTestCase):
     def test_copy_parameters(self):
         """ Tests copy_parameters option in load_parameters """
 
+        # ignore warning that two impropers match
+        warnings.filterwarnings('ignore', category=exceptions.ParameterWarning)
         top = psf.CharmmPsfFile(get_fn('ala_ala_ala.psf'))
         top.load_parameters(parmset=param22, copy_parameters=False)
         b = param22.bond_types[(top.atoms[0].type, top.atoms[1].type)]
@@ -1039,6 +1041,13 @@ class TestCharmmParameters(utils.FileIOTestCase):
             self.assertFalse(a1 & a2)
         else:
             self.assertEqual(a1, a2)
+
+    def test_charmm36_rtf(self):
+        """Test parsing of CHARMM36 RTF files."""
+        # Make sure there are no failures loading CHARMM36 RTF files.
+        param36 = parameters.CharmmParameterSet(get_fn('top_all36_prot.rtf'),
+                                                get_fn('top_all36_carb.rtf'),
+                                                get_fn('top_all36_cgenff.rtf'))
 
 class TestFileWriting(utils.FileIOTestCase):
     """ Tests the various file writing capabilities """

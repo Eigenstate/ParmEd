@@ -9,8 +9,11 @@ module load conda/jenkins || true
 # First remove the existing conda environment
 conda remove -yn ${CONDAENV} --all || true
 
-# Now create the conda environment
-conda create -yn ${CONDAENV} --no-default-packages python=${PYTHON_VERSION} --quiet
+# Now create the conda environment. Try it twice since a race condition might cause the first
+# attempt to fail
+conda create -yn ${CONDAENV} --no-default-packages python=${PYTHON_VERSION} --quiet ||
+    conda create -yn ${CONDAENV} --no-default-packages python=${PYTHON_VERSION} --quiet
+
 if [ "${label}" != "macos" ]; then
     conda config --add channels omnia
     conda config --add channels ambermd
@@ -21,7 +24,7 @@ conda --version
 
 # Now add the packages we want
 conda install --quiet -yn ${CONDAENV} numpy scipy pandas nose openmm coverage nose-timer \
-                                      python-coveralls ambermini=16.16 netCDF4
+                                      python-coveralls ambermini=16.16 netCDF4 lxml
 conda install --quiet -yn ${CONDAENV} pyflakes=1.0.0
 conda install --quiet -yn ${CONDAENV} rdkit==2015.09.1 -c omnia
 conda install --quiet -yn ${CONDAENV} boost==1.59.0 -c omnia

@@ -22,6 +22,7 @@ import parmed.unit as u
 from parmed.utils import PYPY
 from parmed.utils.six import string_types, iteritems
 from parmed.utils.six.moves import range, zip, StringIO
+import pickle
 import random
 import saved_outputs as saved
 import shutil
@@ -33,6 +34,10 @@ try:
     from string import letters
 except ImportError:
     from string import ascii_letters as letters
+
+def _picklecycle(obj):
+    return pickle.loads(pickle.dumps(obj))
+
 
 class TestReadParm(FileIOTestCase):
     """ Tests the various Parm file classes """
@@ -218,6 +223,16 @@ class TestReadParm(FileIOTestCase):
     def test_recalculate_lj(self):
         """ Test the AmberParm.recalculate_LJ() method """
         parm = readparm.AmberParm(get_fn('things.parm7'))
+        self._recalculate_lj_test(parm)
+
+    def test_recalculate_lj_after_pickling(self):
+        """ Test the AmberParm.recalculate_LJ() method with a pickled object """
+        parm = readparm.AmberParm(get_fn('things.parm7'))
+        parm_p = _picklecycle(parm)
+        self._recalculate_lj_test(parm_p)
+
+    def _recalculate_lj_test(self, parm):
+        """ run the tests for AmberParm.recalculate_LJ() """
         orig_LJ_A = np.array(parm.parm_data['LENNARD_JONES_ACOEF'])
         orig_LJ_B = np.array(parm.parm_data['LENNARD_JONES_BCOEF'])
         parm.recalculate_LJ()
@@ -229,6 +244,16 @@ class TestReadParm(FileIOTestCase):
     def test_detect_nbfix(self):
         """ Tests NBFIX detection for AmberParm """
         parm = readparm.AmberParm(get_fn('ash.parm7'))
+        self._detect_nbfix_test(parm)
+
+    def test_detect_nbfix_after_pickling(self):
+        """ Tests NBFIX detection for AmberParm with a pickled object """
+        parm = readparm.AmberParm(get_fn('ash.parm7'))
+        parm_p = _picklecycle(parm)
+        self._detect_nbfix_test(parm_p)
+
+    def _detect_nbfix_test(self, parm):
+        """ run the tests for NBFIX detection for AmberParm """
         self.assertFalse(parm.has_NBFIX())
         parm.parm_data['LENNARD_JONES_BCOEF'][0] = 0.0
         self.assertTrue(parm.has_NBFIX())
@@ -371,6 +396,18 @@ class TestReadParm(FileIOTestCase):
         self.assertTrue(parm.chamber)
         self.assertTrue(parm.has_cmap)
         self.assertEqual(parm.ptr('ifbox'), 1)
+
+    def test_chamber_eliminate_cmap(self):
+        """ Tests that CMAP flags are properly disposed of when they are deleted """
+        parm = readparm.ChamberParm(get_fn('ala_ala_ala.parm7'))
+        for cmap in parm.cmaps:
+            cmap.delete()
+        del parm.cmaps[:]
+        del parm.cmap_types[:]
+        parm.remake_parm()
+        for flag in parm.parm_data:
+            self.assertFalse(flag.startswith('CHARMM_CMAP'))
+        self.assertFalse(parm.has_cmap)
 
     def test_amoeba_big(self):
         """ Test the AmoebaParm class with a large system """
@@ -893,18 +930,13 @@ class TestParameterFiles(FileIOTestCase):
         # Check looking in oldff
         self.assertRaises(ValueError, lambda: finder('rna.amberua.lib', False))
         self.assertEqual(finder('rna.amberua.lib', True),
-                os.path.join(os.getenv('AMBERHOME'), 'dat', 'leap', 'lib',
-                             'oldff', 'rna.amberua.lib')
+            os.path.join(os.getenv('AMBERHOME'), 'dat', 'leap', 'lib', 'oldff', 'rna.amberua.lib')
         )
 
     def test_file_detection_frcmod(self):
         """ Tests the detection of Amber frcmod files """
         for fname in glob.glob(os.path.join(get_fn('parm'), 'frcmod.*')):
-            try:
-                self.assertTrue(parameters.AmberParameterSet.id_format(fname))
-            except Exception as e:
-                print('Unexpected failure with %s' % fname)
-                raise
+            self.assertTrue(parameters.AmberParameterSet.id_format(fname))
         # Now try creating a bunch of non-frcmod files to test the file ID
         # discrimination
         fn = get_fn('test.frcmod', written=True)
@@ -1221,15 +1253,15 @@ class TestParameterFiles(FileIOTestCase):
         """ Tests loading a leaprc file with loadMol2 files """
         fn1 = get_fn('leaprc', written=True)
         with open(fn1, 'w') as f:
-            f.write('DAN = loadMol2 %s\n' % get_fn('tripos1.mol2'))
-            f.write('GPN = loadMol3 %s\n' % get_fn('tripos9.mol2'))
+            f.write('DAN = loadMol2 "%s"\n' % get_fn('tripos1.mol2'))
+            f.write('GPN = loadMol3 "%s"\n' % get_fn('tripos9.mol2'))
         params = parameters.AmberParameterSet.from_leaprc(fn1)
         self.assertEqual(len(params.residues), 2)
         self.assertIn('DAN', params.residues)
         self.assertIn('GPN', params.residues)
         # Now make sure we warn about mult-residue mol2 files
         with open(fn1, 'w') as f:
-            f.write('SOME = loadMol2 %s\n' % get_fn('multimol.mol2'))
+            f.write('SOME = loadMol2 "%s"\n' % get_fn('multimol.mol2'))
         warnings.filterwarnings('error', category=AmberWarning)
         self.assertRaises(AmberWarning, lambda:
                 parameters.AmberParameterSet.from_leaprc(fn1))
@@ -1956,7 +1988,7 @@ class TestAmberMask(unittest.TestCase):
         parm = readparm.AmberParm(get_fn('trx.prmtop'), get_fn('trx.inpcrd'))
         # All atoms within 5 A of residue 8
         mask1 = mask.AmberMask(parm, ':8<@5')
-        # All atoms more than 10 A away from residue 1
+        # All atoms in any residue with at least one atom more than 10 A away from residue 1
         mask2 = mask.AmberMask(parm, ':1>:10')
 
         sel = mask1.Selection()
@@ -1986,6 +2018,15 @@ class TestAmberMask(unittest.TestCase):
                 if within: break
             for atom in res.atoms:
                 self.assertEqual(sel[atom.idx], within)
+
+    def test_mask_underscore(self):
+        """ Test mask selection with atom name having an underscore """
+        parm = readparm.AmberParm(get_fn('ash.parm7'))
+        name = 'AT_A'
+        change(parm, 'ATOM_NAME', '@1', name).execute()
+        # Make sure a selection will grab this atom
+        mask1 = mask.AmberMask(parm, '@%s' % name)
+        self.assertEqual(list(mask1.Selected()), [0])
 
 class TestWriteFiles(FileIOTestCase):
 
@@ -2639,17 +2680,15 @@ class TestAmberTitratableResidues(FileIOTestCase):
     def test_cpin_creation(self):
         """ Test TitratableResidueList and cpin creation """
         import cpinutil
-        repl = dict(parm=get_fn('trx.prmtop'),
-                    output=get_fn('test.cpin', written=True))
+        parm = get_fn('trx.prmtop')
+        output = get_fn('test.cpin', written=True)
         opt = cpinutil.parser.parse_args(
-                    ('-igb 2 -p %(parm)s -states 0,0,1,0,1,1,0,1,0,1,1,1 -o '
-                     '%(output)s' % (repl)).split()
+            ['-igb', '2', '-p', parm, '-states', '0,0,1,0,1,1,0,1,0,1,1,1', '-o', output]
         )
         cpinutil.main(opt)
         self.assertTrue(
-                diff_files(get_saved_fn('test.cpin'),
-                           get_fn('test.cpin', written=True),
-                           absolute_error=1e-6, spacechar='=,')
+            diff_files(get_saved_fn('test.cpin'), get_fn('test.cpin', written=True),
+                       absolute_error=1e-6, spacechar='=,')
         )
 
     def test_titratable_residue(self):

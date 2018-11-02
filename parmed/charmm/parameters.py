@@ -12,6 +12,8 @@ import os
 import re
 import warnings
 from copy import copy as _copy
+from collections import OrderedDict
+from itertools import combinations
 
 from ..constants import TINY
 from ..exceptions import CharmmError, ParameterWarning
@@ -46,7 +48,41 @@ def _typeconv(name):
     return ('%sLTU' % name.upper()).replace('*', 'STR').replace(
             '+', 'P').replace('-', 'M')[:6]
 
-class CharmmParameterSet(ParameterSet):
+class CharmmImproperMatchingMixin(object):
+    """ Implements CHARMM-style improper matching """
+
+    def match_improper_type(self, a1, a2, a3, a4):
+        """ Matches an improper type based on atom type names """
+        typ = self._match_improper_with_typemap(self.improper_types, a1, a2, a3, a4)
+        if typ is None:
+            typ = self._match_improper_with_typemap(self.improper_periodic_types, a1, a2, a3, a4)
+        return typ
+
+    def _match_improper_with_typemap(self, typemap, a1, a2, a3, a4):
+
+        if (a1, a2, a3, a4) in typemap: return typemap[(a1, a2, a3, a4)]
+        if (a4, a3, a2, a1) in typemap: return typemap[(a4, a3, a2, a1)]
+
+        # Now try any of the sortings. The documented CHARMM ordering does not seem to work for
+        # all systems CHARMM supports :(
+
+        key = tuple(sorted([a1, a2, a3, a4]))
+        if self._improper_key_map.get(key, None) in typemap:
+            return typemap[self._improper_key_map[key]]
+
+        for exact1, exact2, exact3 in combinations((a1, a2, a3, a4), 3):
+            key = tuple(sorted([exact1, exact2, exact3, 'X']))
+            if self._improper_key_map.get(key, None) in typemap:
+                return typemap[self._improper_key_map[key]]
+
+        for exact1, exact2 in combinations((a1, a2, a3, a4), 2):
+            key = tuple(sorted([exact1, exact2, 'X', 'X']))
+            if self._improper_key_map.get(key, None) in typemap:
+                return typemap[self._improper_key_map[key]]
+
+        return None
+
+class CharmmParameterSet(ParameterSet, CharmmImproperMatchingMixin):
     """
     Stores a parameter set defined by CHARMM files. It stores the equivalent of
     the information found in the MASS section of the CHARMM topology file
@@ -415,8 +451,8 @@ class CharmmParameterSet(ParameterSet):
                 # The parameter file might or might not have an element name
                 try:
                     elem = words[4].upper()
-                    if len(elem) in (1, 2):
-                        elem = elem.lower(); elem[0] = elem[0].upper()
+                    if len(elem) == 2:
+                        elem = elem[0] + elem[1].lower()
                     atomic_number = AtomicNum[elem]
                 except (IndexError, KeyError):
                     # Figure it out from the mass
@@ -559,7 +595,8 @@ class CharmmParameterSet(ParameterSet):
                 # defined in the first place, so just have the key a fully
                 # sorted list. We still depend on the PSF having properly
                 # ordered improper atoms
-                key = tuple(sorted([type1, type2, type3, type4]))
+                key = (type1, type2, type3, type4)
+                self._improper_key_map[tuple(sorted(key))] = key
                 if per == 0:
                     improp = ImproperType(k, theteq)
                     self.improper_types[key] = improp
@@ -733,10 +770,10 @@ class CharmmParameterSet(ParameterSet):
             own_handle = False
             f = tfile
         hpatch = tpatch = None # default Head and Tail patches
-        residues = dict()
-        patches = dict()
-        hpatches = dict()
-        tpatches = dict()
+        residues = OrderedDict()
+        patches = OrderedDict()
+        hpatches = OrderedDict()
+        tpatches = OrderedDict()
         line = next(f)
         line_index = 0
         try:
@@ -858,6 +895,21 @@ class CharmmParameterSet(ParameterSet):
                             pass
                         elif line[:6].upper() == 'ACCEPT':
                             pass
+                        elif line[:8].upper() == 'LONEPAIR':
+                            # See: https://www.charmm.org/charmm/documentation/by-version/c40b1/params/doc/lonepair/
+                            # TODO: This currently doesn't handle some formats, like Note 3 in the above URL
+                            words = line.split()
+                            lptype_keyword = words[1][0:4].upper()
+                            if lptype_keyword not in ['BISE', 'RELE']:
+                                raise CharmmError('LONEPAIR type {} not supported; only BISEctor and RELEtive supported.'.format(words[1]))
+                            a1, a2, a3, a4 = words[2:6]
+                            keywords = { words[index][0:4].upper() : float(words[index+1]) for index in range(6,len(words),2) }
+                            r = keywords['DIST'] # angstrom
+                            theta = keywords['ANGL'] # degrees
+                            phi = keywords['DIHE'] # degrees
+                            lptypes = { 'BISE' : 'bisector', 'RELE' : 'relative' }
+                            lonepair = (lptypes[lptype_keyword], a1, a2, a3, a4, r, theta, phi) # TODO: Define a LonePair object?
+                            res.lonepairs.append(lonepair)
                         elif line[:2].upper() == 'IC':
                             words = line.split()[1:]
                             ictable.append(([w.upper() for w in words[:4]],
@@ -1064,10 +1116,6 @@ class CharmmParameterSet(ParameterSet):
             f.write('%-6s %-6s %-6s %-6s %11.4f %2d %8.2f\n' %
                     (key[0], key[1], key[2], key[3], typ.phi_k, int(typ.per), typ.phase))
         for key, typ in iteritems(self.improper_types):
-            if key[2] == 'X':
-                key = (key[0], key[2], key[3], key[1])
-            elif key[3] == 'X':
-                key = (key[0], key[3], key[1], key[2])
             f.write('%-6s %-6s %-6s %-6s %11.4f %2d %8.2f\n' %
                     (key[0], key[1], key[2], key[3], typ.psi_k, 0, typ.psi_eq))
         if self.cmap_types:

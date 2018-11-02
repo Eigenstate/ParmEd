@@ -3,7 +3,7 @@ This contains the basic residue template and residue building libraries
 typically used in modelling applications
 """
 
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import copy as _copy
 import numpy as np
 import os
@@ -11,7 +11,7 @@ from parmed.residue import AminoAcidResidue, RNAResidue, DNAResidue
 from parmed.structure import Structure
 from parmed.topologyobjects import Atom, Bond, AtomList, TrackedList
 from parmed.utils.six import iteritems
-from parmed.exceptions import IncompatiblePatchError
+from parmed.exceptions import IncompatiblePatchError, MoleculeError
 import warnings
 
 __all__ = ['PROTEIN', 'NUCLEIC', 'SOLVENT', 'UNKNOWN', 'ResidueTemplate',
@@ -81,6 +81,7 @@ class ResidueTemplate(object):
     def __init__(self, name=''):
         self.atoms = AtomList()
         self.bonds = TrackedList()
+        self.lonepairs = list() # TODO: Should this be a TrackedList?
         self.name = name
         self.head = None
         self.tail = None
@@ -157,10 +158,7 @@ class ResidueTemplate(object):
         # Remove all bonds involving this atom
         for bond in list(self.bonds):
             if (bond.atom1 == atom) or (bond.atom2 == atom):
-                # Remove this bond from all atoms it spans
-                bond.delete()
-                # Delete the bond from the residue
-                self.bonds.remove(bond)
+                self.delete_bond(bond)
 
         # Remove all impropers involving this atom
         for impr in list(self._impr):
@@ -220,6 +218,21 @@ class ResidueTemplate(object):
         if atom1 not in atom2.bond_partners:
             self.bonds.append(Bond(atom1, atom2, order=order))
 
+    def delete_bond(self, bond):
+        """ Delete a bond from this residue template.
+
+        Parameters
+        ----------
+        bond : :class:`Bond`
+            The bond to be deleted
+
+        """
+        if bond in self.bonds:
+            bond.delete()
+            self.bonds.remove(bond)
+        else:
+            raise ValueError('The specified bond {} does not belong to this residue {}'.format(bond, self))
+
     @classmethod
     def from_residue(cls, residue):
         """
@@ -268,6 +281,37 @@ class ResidueTemplate(object):
         except AttributeError:
             self._crd = np.array([[a.xx, a.xy, a.xz] for a in self])
         return self._crd
+
+    @property
+    def empirical_chemical_formula(self):
+        """ Return the empirical chemical formula (in Hill notation) as a string (e.g. 'H2O', 'C6H12'), omitting EPs """
+        # Count number of appearances of each element
+        element_count = defaultdict(int)
+        for atom in self.atoms:
+            element_count[atom.element_name] += 1
+        # Pop EPs if they are present, since they are not chemical
+        if 'EP' in element_count:
+            element_count.pop('EP')
+        # Render to string using Hill notation
+        # https://en.wikipedia.org/wiki/Chemical_formula#Hill_system
+        def format_and_pop_element(element_count, element):
+            count = element_count.pop(element)
+            if count == 1:
+                return element
+            return element + str(count)
+
+        chemical_formula = ''
+        # If carbon is present, first list C, then H (if present)
+        if 'C' in element_count:
+            chemical_formula += format_and_pop_element(element_count, 'C')
+            if 'H' in element_count:
+                chemical_formula += format_and_pop_element(element_count, 'H')
+        # Remaining elements are listed alphabetically
+        alphabetical_elements = sorted(element_count.keys())
+        for element in alphabetical_elements:
+            chemical_formula += format_and_pop_element(element_count, element)
+
+        return chemical_formula
 
     @property
     def net_charge(self):
@@ -419,8 +463,8 @@ class ResidueTemplate(object):
             try:
                 residue.delete_atom(atom_name)
                 modifications_made = True
-            except KeyError as e:
-                raise IncompatiblePatchError(str(e))
+            except (KeyError, MoleculeError) as e:
+                raise IncompatiblePatchError('Atom %s could not be deleted from the patched residue: atoms are %s (exception: %s)' % (atom_name, list(residue._map.keys()), str(e)))
         # Add or replace atoms
         for atom in patch.atoms:
             if atom.name in residue:
@@ -442,8 +486,8 @@ class ResidueTemplate(object):
                 # Add bond
                 residue.add_bond(atom1_name, atom2_name, order)
                 modifications_made = True
-            except IndexError as e:
-                raise IncompatiblePatchError('Bond %s-%s could not be added to patched residue: atoms are %s' % (atom1_name, atom2_name, list(residue._map.keys())))
+            except (IndexError, MoleculeError) as e:
+                raise IncompatiblePatchError('Bond %s-%s could not be added to patched residue: atoms are %s (exception: %s)' % (atom1_name, atom2_name, list(residue._map.keys()), str(e)))
         # Delete impropers
         for impr in patch.delete_impropers:
             try:
@@ -467,6 +511,29 @@ class ResidueTemplate(object):
             raise IncompatiblePatchError('Patch did not modify residue.')
 
         return residue
+
+    def patch_is_compatible(self, patch):
+        """Determine whether a specified patch is compatible with this residue.
+
+        Compatibility is determined by whether Residue.Template.apply_patch(patch) raises as
+        exception or not.
+
+        Parameters
+        ----------
+        patch : PatchTemplate
+            The patch to be applied to this residue.
+
+        Returns
+        -------
+        is_compatible : bool
+            True if patch is compatible with the residue; False if not.
+
+        """
+        try:
+            self.apply_patch(patch)
+            return True
+        except IncompatiblePatchError:
+            return False
 
     def to_networkx(self):
         """ Create a NetworkX graph of atoms and bonds

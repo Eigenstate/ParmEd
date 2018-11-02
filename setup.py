@@ -58,6 +58,12 @@ if sys.platform == 'darwin' and not is_pypy:
     # gcc... sigh.
     os.environ['CXX'] = 'clang++'
     os.environ['CC'] = 'clang'
+elif os.environ.get('CC', '').endswith('pgcc'):
+    # PGI compilers don't play nicely with Python extensions. So force GCC
+    sys.stderr.write('PGI compilers do not work with Python extensions generally. '
+                     'Using GCC instead.\n')
+    os.environ['CC'] = 'gcc'
+    os.environ['CXX'] = 'g++'
 
 # parmed package and all its subpackages
 packages = ['parmed', 'parmed.amber', 'parmed.modeller',
@@ -155,11 +161,12 @@ if __name__ == '__main__':
           description='Amber parameter file editor',
           author='Jason Swails',
           author_email='jason.swails@gmail.com',
-          url='http://jswails.wikidot.com/parmed',
+          url='https://parmed.github.io/ParmEd/html/index.html',
           license='LGPL (or GPL if released with AmberTools)',
           packages=packages,
           ext_modules=extensions,
           cmdclass=cmdclass,
+          test_suite='nose.collector',
           package_data={'parmed.modeller': ['data/*.lib']},
           **kws
     )

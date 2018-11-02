@@ -262,8 +262,9 @@ class NetCDFRestart(object):
 
     @property
     def velocities(self):
-        vels = self._ncfile.variables['velocities'][:]
-        return (vels.reshape((-1, self.atom, 3)) * self.velocity_scale)
+        if 'velocities' in self._ncfile.variables:
+            vels = self._ncfile.variables['velocities'][:]
+            return (vels.reshape((-1, self.atom, 3)) * self.velocity_scale)
 
     @velocities.setter
     def velocities(self, stuff):
@@ -273,7 +274,8 @@ class NetCDFRestart(object):
 
     @property
     def cell_lengths(self):
-        return self._ncfile.variables['cell_lengths'][:]
+        if 'cell_lengths' in self._ncfile.variables:
+            return self._ncfile.variables['cell_lengths'][:]
 
     @cell_lengths.setter
     def cell_lengths(self, stuff):
@@ -282,7 +284,8 @@ class NetCDFRestart(object):
 
     @property
     def cell_angles(self):
-        return self._ncfile.variables['cell_angles'][:]
+        if 'cell_angles' in self._ncfile.variables:
+            return self._ncfile.variables['cell_angles'][:]
 
     @cell_angles.setter
     def cell_angles(self, stuff):
@@ -291,8 +294,9 @@ class NetCDFRestart(object):
 
     @property
     def box(self):
-        leng, ang = self.cell_lengths, self.cell_angles
-        return np.concatenate((leng, ang))
+        if self.cell_lengths is not None and self.cell_angles is not None:
+            leng, ang = self.cell_lengths, self.cell_angles
+            return np.concatenate((leng, ang))
 
     @box.setter
     def box(self, stuff):
@@ -334,9 +338,11 @@ class NetCDFRestart(object):
         self.closed or (hasattr(self, '_ncfile') and self._ncfile.close())
 
     def flush(self):
-        if nc is None:
-            # netCDF4.Dataset does not have a flush method
+        try:
             self._ncfile.flush()
+        except AttributeError:
+            # netCDF4.Dataset's flush method is called sync :-P
+            self._ncfile.sync()
 
 @add_metaclass(FileFormatType)
 class NetCDFTraj(object):

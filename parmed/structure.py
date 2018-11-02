@@ -1,25 +1,6 @@
 """
 This module contains the core base class for all of the chemical structures with
 various topological and force field features.
-
-Author: Jason Swails
-Contributors: Pawel Janowski
-
-Copyright (C) 2014 - 2015  Jason Swails
-
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU Lesser General Public License as published by the Free
-Software Foundation; either version 2 of the License, or (at your option) any
-later version.
-
-This program is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-59 Temple Place - Suite 330
-Boston, MA 02111-1307, USA.
 """
 from __future__ import absolute_import, division
 
@@ -889,8 +870,7 @@ class Structure(object):
                 # information, as it is more reliable
                 a.atomic_number = templ.map[a.name].atomic_number
                 for bp in templ.map[a.name].bond_partners:
-                    if (bp.name in resatoms and
-                            resatoms[bp.name] not in a.bond_partners):
+                    if (bp.name in resatoms and resatoms[bp.name] not in a.bond_partners):
                         if a not in resatoms[bp.name].bond_partners:
                             self.bonds.append(Bond(a, resatoms[bp.name]))
         # Now go through each residue and assign heads and tails. This walks
@@ -900,8 +880,7 @@ class Structure(object):
         for i, res in enumerate(self.residues[:-1]):
             templ = _res_in_templlib(res, all_residues)
             # TER cards and changing chains prevents bonding to the next residue
-            if res.ter or (res.chain and
-                    (res.chain != self.residues[i+1].chain)):
+            if res.ter or (res.chain and (res.chain != self.residues[i+1].chain)):
                 continue
             ntempl = _res_in_templlib(self.residues[i+1], all_residues)
             if templ is None and ntempl is None:
@@ -913,13 +892,15 @@ class Structure(object):
                 # See if any atom in templ is close enough to bond to the head
                 # atom of the next residue's template
                 for head in self.residues[i+1].atoms:
-                    if head.name == ntempl.head:
+                    if head.name == ntempl.head.name:
                         break
                 else:
+                    LOGGER.warning('Could not find the head atom of the next template! Bond '
+                                   'pattern may be wrong, which could lead to extra TER cards in a '
+                                   'PDB file')
                     continue # head atom not found!
                 for a in res.atoms:
-                    maxdist = STANDARD_BOND_LENGTHS_SQUARED[(a.atomic_number,
-                                                             head.atomic_number)]
+                    maxdist = STANDARD_BOND_LENGTHS_SQUARED[(a.atomic_number, head.atomic_number)]
                     if distance2(a, head) < maxdist:
                         if a not in head.bond_partners:
                             self.bonds.append(Bond(a, head))
@@ -936,8 +917,7 @@ class Structure(object):
                 else:
                     continue # tail not found
                 for a in self.residues[i+1].atoms:
-                    maxdist = STANDARD_BOND_LENGTHS_SQUARED[(a.atomic_number,
-                                                             tail.atomic_number)]
+                    maxdist = STANDARD_BOND_LENGTHS_SQUARED[(a.atomic_number, tail.atomic_number)]
                     if distance2(a, tail) < maxdist:
                         if a not in tail.bond_partners:
                             self.bonds.append(Bond(a, tail))
@@ -987,10 +967,8 @@ class Structure(object):
         pairs = find_atom_pairs(self, mindist, unassigned_atoms)
         for atom in unassigned_atoms:
             for partner in pairs[atom.idx]:
-                maxdist = STANDARD_BOND_LENGTHS_SQUARED[(atom.atomic_number,
-                                                         partner.atomic_number)]
-                if (distance2(atom, partner) < maxdist and
-                        atom not in partner.bond_partners):
+                maxdist = STANDARD_BOND_LENGTHS_SQUARED[(atom.atomic_number, partner.atomic_number)]
+                if (distance2(atom, partner) < maxdist and atom not in partner.bond_partners):
                     self.bonds.append(Bond(atom, partner))
             # Now look through all atoms in this template if it's a template
             # that's already been assigned. If it's already in an unassigned
@@ -1005,10 +983,8 @@ class Structure(object):
             for partner in atom.residue.atoms:
                 if partner is atom:
                     continue
-                maxdist = STANDARD_BOND_LENGTHS_SQUARED[(atom.atomic_number,
-                                                         partner.atomic_number)]
-                if (distance2(atom, partner) < maxdist and
-                        atom not in partner.bond_partners):
+                maxdist = STANDARD_BOND_LENGTHS_SQUARED[(atom.atomic_number, partner.atomic_number)]
+                if (distance2(atom, partner) < maxdist and atom not in partner.bond_partners):
                     self.bonds.append(Bond(atom, partner))
         # All reasonable bonds have now been added
 
@@ -1111,8 +1087,7 @@ class Structure(object):
                 num = res.idx
             else:
                 num = res.number
-            struct.add_atom(copy(atom), res.name, num, res.chain,
-                            res.insertion_code, res.segid)
+            struct.add_atom(copy(atom), res.name, num, res.chain, res.insertion_code, res.segid)
         def copy_valence_terms(oval, otyp, sval, styp, attrlist):
             """ Copies the valence terms from one list to another;
             oval=Other VALence; otyp=Other TYPe; sval=Self VALence;
@@ -1217,8 +1192,7 @@ class Structure(object):
                 # selection for speed -- orders of magnitude improvement in
                 # efficiency
                 ressel, atomsel = selection
-                if (isinstance(ressel, integer_types) and
-                        isinstance(atomsel, integer_types)):
+                if isinstance(ressel, integer_types) and isinstance(atomsel, integer_types):
                     return self.residues[ressel][atomsel]
                 has_chain = False
             elif len(selection) == 3:
@@ -1226,9 +1200,8 @@ class Structure(object):
                 chainmap = defaultdict(TrackedList)
                 for r in self.residues:
                     chainmap[r.chain].append(r)
-                if (isinstance(chainsel, string_types) and
-                        isinstance(ressel, integer_types) and
-                        isinstance(atomsel, integer_types)):
+                if (isinstance(chainsel, string_types) and isinstance(ressel, integer_types) and
+                    isinstance(atomsel, integer_types)):
                     # Special-case single-atom selection for efficiency
                     chainmap = dict(chainmap) # no longer defaultdict
                     try:
@@ -1261,15 +1234,13 @@ class Structure(object):
             # Residue selection can either be by name or index
             if isinstance(ressel, slice):
                 resset = set(list(range(len(self.residues)))[ressel])
-            elif isinstance(ressel, string_types) or isinstance(ressel,
-                    integer_types):
+            elif isinstance(ressel, string_types) or isinstance(ressel, integer_types):
                 resset = set([ressel])
             else:
                 resset = set(ressel)
             if isinstance(atomsel, slice):
                 atomset = set(list(range(len(self.atoms)))[atomsel])
-            elif isinstance(atomsel, string_types) or isinstance(atomsel,
-                    integer_types):
+            elif isinstance(atomsel, string_types) or isinstance(atomsel, integer_types):
                 atomset = set([atomsel])
             else:
                 atomset = set(atomsel)
@@ -1283,10 +1254,8 @@ class Structure(object):
                         chain.claim()
                     selection = [
                             (a.residue.chain in chainset) and
-                            (a.residue.name in resset or
-                                a.residue.idx in resset) and
-                            (a.name in atomset or
-                                a.idx-a.residue[0].idx in atomset)
+                            (a.residue.name in resset or a.residue.idx in resset) and
+                            (a.name in atomset or a.idx-a.residue[0].idx in atomset)
 
                             for a in self.atoms
                     ]
@@ -1386,8 +1355,7 @@ class Structure(object):
             for j, struct in enumerate(structs):
                 if len(struct.atoms) == len(sel):
                     for a1, a2 in zip(struct.atoms, sel):
-                        assert None not in (a1.residue, a2.residue), \
-                                'Residues must all be set'
+                        assert None not in (a1.residue, a2.residue), 'Residues must all be set'
                         if a1.residue.name != a2.residue.name: break
                         if a1.name != a2.name: break
                         if '%.6f' % a1.charge != '%.6f' % a2.charge: break
@@ -1481,8 +1449,7 @@ class Structure(object):
                 raise RuntimeError('Must provide supported format if using file-like object')
         all_ints = True
         for atom in self.atoms:
-            if (isinstance(atom.type, integer_types) and
-                    atom.atom_type is not UnassignedAtomType):
+            if (isinstance(atom.type, integer_types) and atom.atom_type is not UnassignedAtomType):
                 atom.type = str(atom.atom_type)
             else:
                 all_ints = False
@@ -1519,9 +1486,8 @@ class Structure(object):
             elif format == 'CHARMMCRD':
                 charmm.CharmmCrdFile.write(self, fname, **kwargs)
             elif format == 'AMBER':
-                if (self.trigonal_angles or self.out_of_plane_bends or
-                        self.torsion_torsions or self.pi_torsions or
-                        self.stretch_bends or self.chiral_frames or
+                if (self.trigonal_angles or self.out_of_plane_bends or self.torsion_torsions or
+                        self.pi_torsions or self.stretch_bends or self.chiral_frames or
                         self.multipole_frames):
                     s = amber.AmoebaParm.from_structure(self)
                     s.write_parm(fname, **kwargs)
@@ -2118,43 +2084,76 @@ class Structure(object):
             If True, water bonds are constrained regardless of whether
             constrains is None
         """
+
         if constraints is None and not rigidWater: return
         if constraints not in (None, app.HBonds, app.AllBonds, app.HAngles):
             raise ValueError("Unrecognized constraints option (%s)" %
                              constraints)
+
         length_conv = u.angstrom.conversion_factor_to(u.nanometer)
-        # Rigid water only
-        if constraints is None:
-            is_water = _settler(self)
+
+        constraint_bond_set = set()
+        constraint_angle_set = set()
+        is_water = _settler(self)
+
+        if constraints is app.AllBonds or constraints is app.HAngles:
             for bond in self.bonds:
                 # Skip all extra points... don't constrain those
-                if isinstance(bond.atom1, ExtraPoint) or isinstance(bond.atom2, ExtraPoint):
-                    continue
+                if isinstance(bond.atom1, ExtraPoint): continue
+                if isinstance(bond.atom2, ExtraPoint): continue
+                constraint_bond_set.add(frozenset((bond.atom1.idx, bond.atom2.idx)))
+        elif constraints is app.HBonds:
+            for bond in self.bonds:
+                if isinstance(bond.atom1, ExtraPoint): continue
+                if isinstance(bond.atom2, ExtraPoint): continue
+                if bond.atom1.element == 1 or bond.atom2.element == 1:
+                    constraint_bond_set.add(frozenset((bond.atom1.idx, bond.atom2.idx)))
+        if rigidWater:
+            for bond in self.bonds:
+                if isinstance(bond.atom1, ExtraPoint): continue
+                if isinstance(bond.atom2, ExtraPoint): continue
                 if is_water[bond.atom1.residue.idx]:
-                    system.addConstraint(bond.atom1.idx, bond.atom2.idx, bond.type.req*length_conv)
-            return
-        # Other types of constraints
+                    constraint_bond_set.add(frozenset((bond.atom1.idx, bond.atom2.idx)))
+
+        # Add bond constraints
         for bond in self.bonds:
-            if constraints is not app.HBonds or 1 in (bond.atom1.element, bond.atom2.element):
-                system.addConstraint(bond.atom1.idx, bond.atom2.idx, bond.type.req*length_conv)
+            if frozenset((bond.atom1.idx, bond.atom2.idx)) in constraint_bond_set:
+                system.addConstraint(bond.atom1.idx, bond.atom2.idx, bond.type.req * length_conv)
+
         if constraints is app.HAngles:
             for angle in self.angles:
-                num_h = (angle.atom1.element == 1) + (angle.atom3.element == 1)
-                if num_h == 2 or (num_h == 1 and angle.atom2.element == 8):
-                    # Constrain this angle
-                    l1 = l2 = None
-                    for bond in angle.atom2.bonds:
-                        if bond in angle and angle.atom1 in bond:
-                            l1 = bond.type.req * length_conv
-                        elif bond in angle and angle.atom3 in bond:
-                            l2 = bond.type.req * length_conv
-                    # Law of cosines to find the constraint distance
-                    if l1 is None or l2 is None:
-                        continue # no bonds found...
-                    cost = math.cos(angle.type.theteq*DEG_TO_RAD)
-                    length = math.sqrt(l1*l1 + l2*l2 - 2*l1*l2*cost) * length_conv
-                    system.addConstraint(angle.atom1.idx, angle.atom3.idx, length)
-
+                numH = 0
+                if angle.atom1.element == 1:
+                    numH += 1
+                if angle.atom3.element == 1:
+                    numH += 1
+                if numH == 2 or (numH == 1 and angle.atom2.element == 8):
+                    constraint_angle_set.add((angle.atom1.idx,
+                                              angle.atom2.idx,
+                                              angle.atom3.idx))
+        if rigidWater:
+            for angle in self.angles:
+                if is_water[angle.atom1.residue.idx]:
+                    constraint_angle_set.add((angle.atom1.idx,
+                                              angle.atom2.idx,
+                                              angle.atom3.idx))
+        # Add angle constraints
+        for angle in self.angles:
+            if (angle.atom1.idx, angle.atom2.idx, angle.atom3.idx) in constraint_angle_set:
+                if frozenset((angle.atom1.idx, angle.atom3.idx)) in constraint_bond_set:
+                    continue
+                # Constrain this angle
+                l1 = l2 = None
+                for bond in angle.atom2.bonds:
+                    if bond in angle and angle.atom1 in bond:
+                        l1 = bond.type.req * length_conv
+                    elif bond in angle and angle.atom3 in bond:
+                        l2 = bond.type.req * length_conv
+                # Law of cosines to find the constraint distance
+                if l1 is None or l2 is None: continue  # no bonds found...
+                cost = math.cos(angle.type.theteq * DEG_TO_RAD)
+                length = math.sqrt(l1 * l1 + l2 * l2 - 2 * l1 * l2 * cost)
+                system.addConstraint(angle.atom1.idx, angle.atom3.idx, length)
     #===================================================
 
     @needs_openmm

@@ -898,8 +898,14 @@ class CharmmParameterSet(ParameterSet, CharmmImproperMatchingMixin):
                             # TODO: This currently doesn't handle some formats, like Note 3 in the above URL
                             words = line.split()
                             lptype_keyword = words[1][0:4].upper()
+
                             if lptype_keyword not in ['BISE', 'RELA']:
-                                raise CharmmError('LONEPAIR type {} not supported; only BISEctor and RELAtive supported.'.format(words[1]))
+                                warnings.warn('LONEPAIR type {} not supported;'
+                                              'only BISEctor and RELAtive'
+                                              'supported.'.format(words[1]),
+                                              ParameterWarning)
+                                break
+
                             a1, a2, a3, a4 = words[2:6]
                             keywords = { words[index][0:4].upper() : float(words[index+1]) for index in range(6,len(words),2) }
                             r = keywords['DIST'] # angstrom
